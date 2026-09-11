@@ -3,9 +3,10 @@ set -euo pipefail
 
 show_help() {
     printf '%s\n' \
-        'Uso: ia [copilot|claude|codex|terminal] [argumentos]' \
+    'Uso: ia [copilot|claude|codex|antigravity|agy|terminal] [argumentos]' \
         'Sem argumentos, abre o menu em uma sessao interativa.' \
-        'Codex: execucao no sandbox nao validada para Android/PRoot.'
+    'Codex: execucao no sandbox nao validada para Android/PRoot.' \
+    'Antigravity CLI: integracao experimental, sem validacao em Android/PRoot.'
 }
 
 launcher_name="${0##*/}"
@@ -15,7 +16,7 @@ if [[ "$launcher_name" == ia ]]; then
             show_help
             exit 0
         fi
-        printf '\nTermux AI\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (experimental)\n4. Terminal Linux\n0. Sair\n\n'
+        printf '\nTermux AI\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (experimental)\n4. Terminal Linux\n5. Google Antigravity CLI (experimental)\n0. Sair\n\n'
         if ! read -r -p 'Escolha: ' selection; then
             exit 0
         fi
@@ -24,6 +25,7 @@ if [[ "$launcher_name" == ia ]]; then
             2) tool_name=claude ;;
             3) tool_name=codex ;;
             4) tool_name=terminal ;;
+            5) tool_name=agy ;;
             0) exit 0 ;;
             *) printf '%s\n' 'Opcao invalida.' >&2; exit 2 ;;
         esac
@@ -40,6 +42,7 @@ fi
 
 case "$tool_name" in
     codex|copilot|claude) ;;
+    antigravity|agy) tool_name=agy ;;
     terminal|linux)
         tool_name=/bin/bash
         set -- -l "$@"

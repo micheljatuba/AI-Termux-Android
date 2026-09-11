@@ -54,7 +54,7 @@ fi
 if [[ -e "$container_dir" || -L "$container_dir" || -e "$legacy_dir" || -L "$legacy_dir" ]]; then
     [[ -f "$state_dir/container.managed" ]] || fail 'Ja existe um Linux chamado termux-ai que nao foi concluido por este instalador. Preserve seus dados antes de resolver o conflito.'
 fi
-for tool_name in ia codex copilot claude; do
+for tool_name in ia codex copilot claude antigravity agy; do
     target="$PREFIX/bin/$tool_name"
     if [[ -e "$target" || -L "$target" ]]; then
         [[ ! -L "$target" && -f "$state_dir/bin/ia" ]] || fail "O comando $tool_name ja existe. Nao sera substituido."
@@ -76,7 +76,8 @@ printf 'Android API %s; arquitetura %s; espaco livre suficiente.\n' "$android_sd
 printf '%s\n' \
     'Sera usado um Linux dedicado: termux-ai (Debian + Node.js 24).' \
     'Os agentes exigem contas proprias e internet. PRoot nao e isolamento de seguranca.' \
-    'Codex permanece experimental: o sandbox falhou no teste inicial em Android/PRoot.'
+    'Codex permanece experimental: o sandbox falhou no teste inicial em Android/PRoot.' \
+    'Antigravity CLI permanece experimental: login e execucao ainda nao testados em Android/PRoot.'
 if (( check_only )); then
     printf '%s\n' 'Pre-verificacao concluida. Nada foi instalado; a execucao real dos agentes ainda precisa ser testada.'
     exit 0
@@ -114,7 +115,7 @@ proot-distro login termux-ai --user node -- /bin/bash -se -- agents < "$project_
 } > "$state_dir/bin/ia.next"
 chmod 755 "$state_dir/bin/ia.next"
 mv -- "$state_dir/bin/ia.next" "$state_dir/bin/ia"
-for tool_name in ia codex copilot claude; do
+for tool_name in ia codex copilot claude antigravity agy; do
     install -m 755 "$state_dir/bin/ia" "$PREFIX/bin/$tool_name"
 done
 
@@ -132,7 +133,7 @@ else
 fi
 
 printf '\n%s\n' \
-    'Instalacao concluida; os comandos de versao dos tres agentes passaram.' \
+    'Instalacao concluida; os comandos de versao dos quatro agentes passaram.' \
     'Abra uma nova sessao Bash ou execute ia. Use 0 no menu para chegar ao shell.' \
     'Faltam seus logins e os testes com modelos. Nenhuma credencial foi solicitada.' \
     'O sandbox do Codex nao foi desativado. Nenhuma conexao SSH/ADB foi criada.'

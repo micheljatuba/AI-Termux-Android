@@ -39,14 +39,28 @@ assert_equal "${actual_args[14]}" '"quoted"' 'preserves quotes'
 assert_equal "${actual_args[15]}" '' 'preserves empty arguments'
 printf '%s\n' 'PASS launcher argument transport'
 
-for tool_name in codex copilot claude; do
+for tool_name in codex copilot claude antigravity agy; do
     cp "$project_root/bin/ia" "$test_root/bin/$tool_name"
     bash "$test_root/bin/$tool_name" --version
     mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
-    assert_equal "${actual_args[11]}" "$tool_name" "dispatches $tool_name shortcut"
+    expected_tool="$tool_name"
+    if [[ "$tool_name" == antigravity ]]; then
+        expected_tool=agy
+    fi
+    assert_equal "${actual_args[11]}" "$expected_tool" "dispatches $tool_name shortcut"
     assert_equal "${actual_args[12]}" --version 'preserves shortcut arguments'
 done
-printf '%s\n' 'PASS all three shortcuts'
+printf '%s\n' 'PASS all agent shortcuts'
+
+for tool_name in antigravity agy; do
+    bash "$project_root/bin/ia" "$tool_name" 'two words' 'literal;value' ''
+    mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+    assert_equal "${actual_args[11]}" agy 'uses the official Antigravity CLI command'
+    assert_equal "${actual_args[12]}" 'two words' 'preserves Antigravity prompt spaces'
+    assert_equal "${actual_args[13]}" 'literal;value' 'preserves Antigravity punctuation'
+    assert_equal "${actual_args[14]}" '' 'preserves Antigravity empty arguments'
+done
+printf '%s\n' 'PASS Antigravity aliases and argument transport'
 
 bash "$project_root/bin/ia" terminal -c 'printf terminal-ok'
 mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
@@ -55,11 +69,13 @@ assert_equal "${actual_args[12]}" -l 'loads the terminal profile'
 assert_equal "${actual_args[14]}" 'printf terminal-ok' 'preserves terminal command'
 printf '%s\n' 'PASS terminal dispatch'
 
-if TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" claude > "$test_root/nested.log" 2>&1; then
-    printf '%s\n' 'FAIL nested launcher was accepted' >&2
-    exit 1
-fi
-grep -q 'nao foi encontrado' "$test_root/nested.log"
+for tool_name in claude antigravity agy; do
+    if TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" "$tool_name" > "$test_root/nested.log" 2>&1; then
+        printf '%s\n' 'FAIL nested launcher was accepted' >&2
+        exit 1
+    fi
+    grep -q 'nao foi encontrado' "$test_root/nested.log"
+done
 printf '%s\n' 'PASS recursion guard'
 
 rm "$TERMUX_AI_TEST_ARGS"
@@ -152,14 +168,16 @@ test ! -e "$TERMUX_AI_TEST_INSTALL_LOG"
 test ! -e "$HOME/.local"
 printf '%s\n' 'PASS read-only preflight and unsupported environments'
 
-printf 'existing launcher\n' > "$PREFIX/bin/copilot"
-if bash "$project_root/install.sh" --yes > "$test_root/conflict.log" 2>&1; then
-    printf '%s\n' 'FAIL existing command was overwritten' >&2
-    exit 1
-fi
-assert_equal "$(< "$PREFIX/bin/copilot")" 'existing launcher' 'preserves existing commands'
-test ! -e "$TERMUX_AI_TEST_INSTALL_LOG"
-rm "$PREFIX/bin/copilot"
+for tool_name in copilot antigravity agy; do
+    printf 'existing launcher\n' > "$PREFIX/bin/$tool_name"
+    if bash "$project_root/install.sh" --yes > "$test_root/conflict.log" 2>&1; then
+        printf '%s\n' 'FAIL existing command was overwritten' >&2
+        exit 1
+    fi
+    assert_equal "$(< "$PREFIX/bin/$tool_name")" 'existing launcher' 'preserves existing commands'
+    test ! -e "$TERMUX_AI_TEST_INSTALL_LOG"
+    rm "$PREFIX/bin/$tool_name"
+done
 mkdir -p "$PREFIX/var/lib/proot-distro/containers/termux-ai/rootfs"
 if bash "$project_root/install.sh" --yes > "$test_root/conflict.log" 2>&1; then
     printf '%s\n' 'FAIL unrelated container was accepted' >&2
@@ -179,7 +197,7 @@ bash "$project_root/install.sh" --yes > "$test_root/reinstall.log"
 assert_equal "$(grep -c '^proot install ' "$TERMUX_AI_TEST_INSTALL_LOG")" 1 'does not reinstall the Linux image'
 assert_equal "$(grep -c 'menu.bash' "$HOME/.bashrc")" 1 'does not duplicate the startup hook'
 assert_equal "$(< "$PREFIX/var/lib/proot-distro/containers/ubuntu/rootfs/project")" 'keep this project' 'preserves other Linux data'
-for tool_name in ia codex copilot claude; do
+for tool_name in ia codex copilot claude antigravity agy; do
     test -x "$PREFIX/bin/$tool_name"
     cmp "$PREFIX/bin/$tool_name" "$state_dir/bin/ia"
 done
@@ -216,6 +234,102 @@ test ! -e "$HOME/.local/share/termux-ai/install.lock"
 bash "$project_root/install.sh" --yes > "$test_root/recovered-install.log"
 test -x "$PREFIX/bin/ia"
 printf '%s\n' 'PASS guest failure stops cleanly and can be retried'
+
+export HOME="$test_root/guest-home"
+export USER=node
+export TERMUX_AI_TEST_DOWNLOAD_LOG="$test_root/download.log"
+export TERMUX_AI_TEST_AGY_PAYLOAD="$test_root/antigravity.tar.gz"
+mkdir -p "$HOME/.local/bin" "$test_root/payload"
+cat > "$test_root/payload/antigravity" <<'MOCK'
+#!/usr/bin/env bash
+[[ "$1" == --version ]] || exit 2
+printf 'agy mock 1.2.1\n'
+exit "${TERMUX_AI_TEST_AGY_VERSION_FAILURE:-0}"
+MOCK
+tar -czf "$TERMUX_AI_TEST_AGY_PAYLOAD" -C "$test_root/payload" antigravity
+TERMUX_AI_TEST_AGY_SHA512="$(sha512sum "$TERMUX_AI_TEST_AGY_PAYLOAD" | awk '{ print $1 }')"
+export TERMUX_AI_TEST_AGY_SHA512
+cat > "$test_root/bin/npm" <<'MOCK'
+#!/usr/bin/env bash
+for tool_name in codex copilot; do
+    printf '#!/usr/bin/env bash\nprintf "%s mock\\n"\n' "$tool_name" > "$HOME/.local/bin/$tool_name"
+    chmod +x "$HOME/.local/bin/$tool_name"
+done
+MOCK
+cat > "$test_root/bin/curl" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+destination=''
+source_url=''
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --output) destination="$2"; shift ;;
+        https://*) source_url="$1" ;;
+    esac
+    shift
+done
+printf '%s\n' "$source_url" >> "$TERMUX_AI_TEST_DOWNLOAD_LOG"
+case "$source_url" in
+    https://claude.ai/install.sh)
+        printf '#!/usr/bin/env bash\nprintf '\''#!/usr/bin/env bash\\nprintf "claude mock\\\\n"\\n'\'' > "$HOME/.local/bin/claude"\nchmod +x "$HOME/.local/bin/claude"\n' > "$destination"
+        ;;
+    https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/linux_*.json)
+        node - "$destination" <<'NODE'
+const { writeFileSync } = require('node:fs');
+const manifest = {
+    version: '1.2.1',
+    url: 'https://storage.googleapis.com/antigravity-public/antigravity-cli/test/agy.tar.gz',
+    sha512: process.env.TERMUX_AI_TEST_AGY_SHA512,
+};
+if (process.env.TERMUX_AI_TEST_BAD_AGY_MANIFEST === 'url') manifest.url = 'https://example.invalid/agy.tar.gz';
+if (process.env.TERMUX_AI_TEST_BAD_AGY_MANIFEST === 'missing-hash') delete manifest.sha512;
+if (process.env.TERMUX_AI_TEST_BAD_AGY_MANIFEST === 'checksum') manifest.sha512 = '0'.repeat(128);
+writeFileSync(process.argv[2], JSON.stringify(manifest));
+NODE
+        ;;
+    https://storage.googleapis.com/antigravity-public/antigravity-cli/test/agy.tar.gz)
+        cp "$TERMUX_AI_TEST_AGY_PAYLOAD" "$destination"
+        ;;
+    *) printf 'Unexpected download: %s\n' "$source_url" >&2; exit 2 ;;
+esac
+MOCK
+chmod +x "$test_root/bin/npm" "$test_root/bin/curl"
+printf 'alias antigravity=existing-editor\n' > "$HOME/.bashrc"
+cp "$HOME/.bashrc" "$test_root/guest-bashrc.before"
+bash "$project_root/scripts/setup-linux.sh" agents > "$test_root/guest-setup.log"
+test -x "$HOME/.local/bin/agy"
+grep -q 'agy mock 1.2.1' "$test_root/guest-setup.log"
+cmp "$HOME/.bashrc" "$test_root/guest-bashrc.before"
+cp "$HOME/.local/bin/agy" "$test_root/agy.before"
+printf '%s\n' 'PASS Antigravity manifest, checksum, install and preserved aliases'
+
+for failure_mode in url missing-hash checksum; do
+    : > "$TERMUX_AI_TEST_DOWNLOAD_LOG"
+    if TERMUX_AI_TEST_BAD_AGY_MANIFEST="$failure_mode" bash "$project_root/scripts/setup-linux.sh" agents > "$test_root/agy-failure.log" 2>&1; then
+        printf 'FAIL bad Antigravity manifest accepted: %s\n' "$failure_mode" >&2
+        exit 1
+    fi
+    cmp "$HOME/.local/bin/agy" "$test_root/agy.before"
+    if [[ "$failure_mode" != checksum ]] && grep -q 'storage.googleapis.com' "$TERMUX_AI_TEST_DOWNLOAD_LOG"; then
+        printf '%s\n' 'FAIL package download happened before manifest validation' >&2
+        exit 1
+    fi
+done
+printf '%s\n' 'PASS Antigravity rejects invalid sources, missing hashes and corrupted downloads'
+
+cat > "$test_root/payload/antigravity" <<'MOCK'
+#!/usr/bin/env bash
+printf 'agy broken candidate\n'
+exit 3
+MOCK
+tar -czf "$TERMUX_AI_TEST_AGY_PAYLOAD" -C "$test_root/payload" antigravity
+TERMUX_AI_TEST_AGY_SHA512="$(sha512sum "$TERMUX_AI_TEST_AGY_PAYLOAD" | awk '{ print $1 }')"
+if bash "$project_root/scripts/setup-linux.sh" agents > "$test_root/agy-version-failure.log" 2>&1; then
+    printf '%s\n' 'FAIL broken Antigravity executable was installed' >&2
+    exit 1
+fi
+cmp "$HOME/.local/bin/agy" "$test_root/agy.before"
+printf '%s\n' 'PASS Antigravity startup failure preserves the installed binary'
 
 for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash tests/run.sh; do
     bash -n "$project_root/$relative_path"

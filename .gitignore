@@ -3,5 +3,6 @@
 .codex/
 .claude/
 .copilot/
+.gemini/antigravity-cli/
 node_modules/
 *.log
