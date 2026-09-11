@@ -1,0 +1,7 @@
+.env
+.env.*
+.codex/
+.claude/
+.copilot/
+node_modules/
+*.log

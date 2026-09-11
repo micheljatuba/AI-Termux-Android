@@ -1,0 +1,20 @@
+name: Shell Checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Check shell scripts
+        run: shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash tests/run.sh
+      - name: Run offline tests
+        run: bash tests/run.sh

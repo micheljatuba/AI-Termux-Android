@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+show_help() {
+    printf '%s\n' \
+        'Uso: ia [copilot|claude|codex|terminal] [argumentos]' \
+        'Sem argumentos, abre o menu em uma sessao interativa.' \
+        'Codex: execucao no sandbox nao validada para Android/PRoot.'
+}
+
+launcher_name="${0##*/}"
+if [[ "$launcher_name" == ia ]]; then
+    if [[ $# -eq 0 ]]; then
+        if [[ ! -t 0 || ! -t 1 ]]; then
+            show_help
+            exit 0
+        fi
+        printf '\nTermux AI\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (experimental)\n4. Terminal Linux\n0. Sair\n\n'
+        if ! read -r -p 'Escolha: ' selection; then
+            exit 0
+        fi
+        case "$selection" in
+            1) tool_name=copilot ;;
+            2) tool_name=claude ;;
+            3) tool_name=codex ;;
+            4) tool_name=terminal ;;
+            0) exit 0 ;;
+            *) printf '%s\n' 'Opcao invalida.' >&2; exit 2 ;;
+        esac
+    elif [[ "$1" == --help || "$1" == -h ]]; then
+        show_help
+        exit 0
+    else
+        tool_name="$1"
+        shift
+    fi
+else
+    tool_name="$launcher_name"
+fi
+
+case "$tool_name" in
+    codex|copilot|claude) ;;
+    terminal|linux)
+        tool_name=/bin/bash
+        set -- -l "$@"
+        ;;
+    *) show_help >&2; exit 2 ;;
+esac
+
+if [[ ${TERMUX_AI_GUEST:-} == 1 ]]; then
+    printf '%s\n' 'O agente nao foi encontrado dentro do Linux. Execute novamente o instalador pelo Termux.' >&2
+    exit 1
+fi
+
+if ! command -v proot-distro >/dev/null 2>&1; then
+    printf '%s\n' 'PRoot-Distro nao encontrado. Execute bash install.sh pelo Termux.' >&2
+    exit 1
+fi
+
+exec proot-distro login termux-ai --user node --work-dir "$PWD" -- \
+    /bin/bash -lc 'export TERMUX_AI_GUEST=1; export PATH="$HOME/.local/bin:$PATH"; exec "$@"' \
+    termux-ai "$tool_name" "$@"
