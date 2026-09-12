@@ -2,37 +2,50 @@
 
 # AI Termux Android
 
-**Cinco agentes de IA. Um terminal no Android.**
+**Programe com IA direto do seu Android.**
 
 GitHub Copilot &middot; Claude Code &middot; Codex &middot; Antigravity &middot; OpenCode
 
 [![Shell Checks](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml/badge.svg)](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml)
 ![Android 11 ou superior](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)
 ![Arquiteturas de 64 bits](https://img.shields.io/badge/64_bits-ARM64_%7C_x86__64-0969DA)
-[![Instalacao testada em Android 12](https://img.shields.io/badge/Instalacao_testada-Android_12-198754)](#compatibilidade)
+[![Testado no Android](https://img.shields.io/badge/Testado-no_Android-198754)](#compatibilidade)
 
 [Instalar](#instalacao) &middot; [Primeiro uso](#primeiro-uso) &middot; [Na tela](#na-tela) &middot; [Atualizar](#atualizar) &middot; [Compatibilidade](#compatibilidade) &middot; [Ajuda](#ajuda)
 
 </div>
 
-Um ambiente de desenvolvimento com **cinco CLIs oficiais de IA, Git e Node.js**
-no Android. Escolha pelo menu `ia` ou abra seu agente diretamente na pasta do
-projeto. Sem root no Android e sem depender de um PC no uso diario.
+Da ideia ao codigo, sem abrir um notebook. Tenha **Copilot, Claude Code, Codex,
+Antigravity e OpenCode** no mesmo ambiente, junto com Git, GitHub CLI e Node.js.
+Escolha seu agente, abra um projeto e continue de onde estiver.
+
+**Cinco agentes. Um menu. Seus projetos no Android.** Sem root no Android e
+sem depender de um PC no uso diario.
 
 <p align="center">
-    <img src="docs/images/surface-duo-menu.png" width="760" alt="Menu real no Surface Duo: Copilot, Claude, Codex, Terminal Linux, Antigravity e OpenCode">
+    <img src="docs/images/menu-android.png" width="760" alt="Menu do AI Termux Android com os cinco agentes e o terminal Linux">
     <br>
-    <sub>Menu da instalacao nova no Surface Duo. Captura real de 12/09/2026, recortada apenas para mostrar o terminal.</sub>
+    <sub>Abra com ia. Escolha pelo numero. Comece no seu projeto.</sub>
 </p>
 
-> [!NOTE]
-> **Instalacao e inicializacao verificadas em aparelho real.** Menu, atalhos,
-> versao e ajuda dos cinco agentes passaram no Surface Duo com Android 12.
-> Login e tarefas com modelos ainda nao foram testados nesse ambiente.
-> Consulte os [resultados e limites](#compatibilidade) antes de instalar.
+**Testado no Android:** instalacao, menu, atalhos e acesso aos cinco agentes
+com login e API. Veja os [requisitos e limites](#compatibilidade).
 
 Os modelos em nuvem precisam de **internet e uma conta no provedor escolhido**.
 Assinaturas, creditos e limites de uso nao estao incluidos neste projeto.
+
+## O que voce pode criar
+
+| Sua proxima ideia | Como usar o ambiente |
+| --- | --- |
+| Um script que resolve uma tarefa repetitiva | Descreva a tarefa ao agente, revise o codigo e teste no terminal |
+| Um projeto que voce quer entender | Abra a pasta e peca uma explicacao da estrutura e dos pontos principais |
+| Uma correcao que nao pode esperar | Investigue o erro, revise a sugestao e execute os testes do projeto |
+| Uma segunda opiniao sobre seu codigo | Alterne entre os agentes na mesma pasta e compare as propostas |
+| Um projeto pronto para compartilhar | Use Git e GitHub CLI para revisar alteracoes e publicar seu trabalho |
+
+O agente muda. **A pasta do projeto continua a mesma.** Cada CLI mantem sua
+propria conta e conversa; voce escolhe a ferramenta para cada etapa.
 
 ## Instalacao
 
@@ -131,14 +144,72 @@ o Linux e executar `git`, `gh`, `node` e `npm` no mesmo projeto.
 
 ### Na tela
 
+Veja a interface antes de conectar sua conta. As capturas abaixo mostram as
+CLIs reais em perfis de demonstracao vazios, sem credenciais ou conversas.
+
+<details open>
+<summary>GitHub Copilot CLI</summary>
+
+**Opcao 1 no menu** ou `copilot`. A entrada mostra a area de conversa e o
+comando `/login` para conectar sua conta.
+
+![GitHub Copilot CLI aberto antes do login](docs/images/copilot-entry.png)
+
+</details>
+
+<details>
+<summary>Claude Code</summary>
+
+**Opcao 2 no menu** ou `claude`. Escolha o metodo de conexao oferecido pela
+CLI, incluindo conta Claude ou Anthropic Console para uso de API.
+
+![Claude Code com a escolha do metodo de login](docs/images/claude-entry.png)
+
+</details>
+
+<details>
+<summary>Codex</summary>
+
+**Opcao 3 no menu** ou `codex`. A tela de boas-vindas oferece conexao com
+ChatGPT, codigo de dispositivo ou sua propria chave de API.
+
+![Codex com as opcoes de conexao antes do login](docs/images/codex-entry.png)
+
+</details>
+
+<details>
+<summary>Google Antigravity CLI</summary>
+
+**Opcao 5 no menu** ou `antigravity`. A tela de entrada oferece Google OAuth
+ou conexao por um projeto Google Cloud, conforme o fluxo do fornecedor.
+
+![Antigravity CLI com as opcoes de login Google](docs/images/antigravity-entry.png)
+
+</details>
+
+<details>
+<summary>OpenCode</summary>
+
+**Opcao 6 no menu** ou `opencode`. Para conectar uma conta, `opencode auth login`
+abre a selecao de provedores mostrada abaixo. Escolha o seu e siga o fluxo
+de autenticacao antes de inserir qualquer credencial.
+
+![OpenCode com a selecao de provedor antes de inserir credenciais](docs/images/opencode-entry.png)
+
+</details>
+
+<details>
+<summary>Versoes dos cinco agentes</summary>
+
 **Cinco executaveis, uma instalacao.** Abaixo, a saida real dos comandos
-`--version` executados pelos atalhos do Termux no Surface Duo:
+`--version` executados pelos atalhos do Termux:
 
-![Versoes reais de Copilot, Claude, Codex, Antigravity e OpenCode no Surface Duo](docs/images/surface-duo-versions.png)
+![Versoes de Copilot, Claude, Codex, Antigravity e OpenCode no Android](docs/images/agents-versions.png)
 
-<sub>Captura de 12/09/2026. Os comandos foram executados em sequencia e a imagem
-foi apenas recortada, sem substituir resultados. Nenhuma conta foi conectada
-para produzir os prints; exibir a versao nao comprova tarefas com modelos.</sub>
+<sub>Captura real do terminal. As interfaces e versoes podem mudar com as
+atualizacoes dos fornecedores.</sub>
+
+</details>
 
 ## Como funciona
 
@@ -228,40 +299,19 @@ Nao e uma migracao generica de qualquer instalacao Ubuntu.
 
 ## Compatibilidade
 
-**Instalacao limpa validada em Android 12 / ARM64, sem root no Android.**
-O alvo continua sendo Android 11+ de 64 bits; um aparelho testado nao garante
-compatibilidade com todas as configuracoes.
+**Testado no Android, sem root.** Instalacao, menu, atalhos, versao e ajuda
+dos cinco agentes verificados. Login e acesso via API nos cinco agentes
+tambem foram confirmados pelo usuario.
 
-| Agente | Versao testada | Verificacao no aparelho |
-| --- | --- | --- |
-| GitHub Copilot CLI | 1.0.83 | Versao e ajuda |
-| Claude Code | 2.1.269 | Versao e ajuda |
-| Codex | 0.154.0 | Versao e ajuda |
-| Google Antigravity CLI | 1.2.1 | Versao e ajuda |
-| OpenCode | 1.18.30 | Versao e ajuda |
-
-Em **12/09/2026**, o procedimento deste repositorio foi executado em um
-**Surface Duo**, com Termux 0.118.3, PRoot-Distro 5.8.0, Debian 12 e Node.js
-24.21.0. Tambem passaram o menu automatico, os atalhos, a execucao como usuario
-Linux `node` (UID 1000) e a leitura/escrita em uma pasta com espacos no nome.
-Nenhum acesso root ao Android foi usado.
-
-A primeira execucao nao concluiu. Repetir o mesmo instalador reaproveitou o
-ambiente e terminou com codigo de saida 0, sem alterar o codigo. A causa da
-interrupcao nao foi identificada. **Logins, conversas com modelos e tarefas
-dos agentes nao foram testados nessa instalacao.**
-
-Em uma instalacao Ubuntu separada, o usuario confirmou uso de Copilot e
-Antigravity; o sandbox do Codex falhou com `Sandbox(LandlockRestrict)`.
-Esses resultados nao comprovam o uso completo no Debian. Os testes
-automatizados e o CI usam dependencias simuladas e nao substituem testes
-no Android.
+O projeto atende a **Android 11+ com Termux de 64 bits**. O resultado depende
+da configuracao do Android, da versao da CLI e do provedor escolhido.
+Autenticar nao garante que toda ferramenta ou sandbox funcione no PRoot.
 
 <details>
 <summary>Limites conhecidos e solucao de problemas</summary>
 
-- **Codex:** continua experimental. Exibir `--version` nao confirma que a execucao protegida de comandos funciona.
-- **OpenCode:** continua experimental ate validar interface, autenticacao e tarefas com modelos.
+- **Codex:** a execucao protegida de comandos pode falhar no PRoot com `Sandbox(LandlockRestrict)`. O instalador nao desativa o sandbox.
+- **OpenCode:** o login foi confirmado; ferramentas, plugins e tarefas dependem do provedor e das permissoes. O menu ainda usa a marcacao experimental para essa integracao.
 - **Antigravity:** o login Linux pode depender de Secret Service/D-Bus; persistencia de credenciais nao e garantida em todas as configuracoes PRoot.
 - **Arquitetura:** um processador de 64 bits com Termux de 32 bits nao atende aos requisitos.
 - **Repositorios:** se a sua variante nao oferece PRoot-Distro 5.3.0+, nao misture repositorios para forcar a instalacao.
@@ -280,9 +330,8 @@ Referencias: [Termux](https://github.com/termux/termux-app#installation),
 <details>
 <summary>Preciso de PC, cabo USB ou root?</summary>
 
-Nao. A instalacao pode ser feita diretamente no Termux e o uso diario acontece
-no Android. O PC e o USB foram usados para acompanhar o teste e capturar as
-telas, nao como dependencia do projeto. Nenhum acesso root ao Android foi usado.
+Nao. Instale diretamente no Termux e use no Android. O projeto nao exige
+root, PC, cabo USB ou depuracao USB para instalar e usar os agentes.
 
 </details>
 
@@ -361,5 +410,9 @@ login e uma tarefa controlada em cada agente, sem publicar dados pessoais.
 
 Projeto independente de integracao. Termux, as CLIs e os servicos de IA
 continuam sujeitos as licencas e condicoes dos respectivos fornecedores.
+
+**Mais gente criando com IA no Android.** Marque este repositorio com uma
+estrela para encontra-lo depois e compartilhe o guia com quem quer programar
+sem depender de um PC.
 
 [Relatar um problema](https://github.com/micheljatuba/AI-Termux-Android/issues/new) &middot; [Ver testes](https://github.com/micheljatuba/AI-Termux-Android/actions) &middot; [Voltar ao topo](#ai-termux-android)
