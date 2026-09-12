@@ -44,7 +44,7 @@ work_dir="$(mktemp -d "$PREFIX/bin/.opencode-update.XXXXXX")"
 trap 'rm -rf -- "$work_dir"' EXIT
 cp -p -- "$launcher" "$work_dir/ia.before"
 if ! awk '
-    /\\n5[.] Google Antigravity CLI \(experimental\)\\n0[.] Sair/ {
+    /\\n5[.] Google Antigravity CLI( \(experimental\))?\\n0[.] Sair/ {
         position = index($0, "\\n0. Sair")
         $0 = substr($0, 1, position - 1) "\\n6. OpenCode (experimental)" substr($0, position)
         menus++

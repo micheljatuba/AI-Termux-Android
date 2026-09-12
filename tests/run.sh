@@ -464,6 +464,18 @@ cmp "$PREFIX/bin/ia" "$test_root/ubuntu-launcher.after"
 printf '%s\n' 'PASS Ubuntu menu option 6, backup and repeat installation'
 
 rm "$PREFIX/bin/opencode"
+sed 's/Google Antigravity CLI (experimental)/Google Antigravity CLI/g' "$test_root/ubuntu-launcher.before" > "$PREFIX/bin/ia"
+bash "$project_root/scripts/add-opencode-ubuntu.sh" --yes > "$test_root/ubuntu-no-label.log"
+grep -Fq '\n5. Google Antigravity CLI\n6. OpenCode (experimental)' "$PREFIX/bin/ia"
+grep -Fq '6) tool_name=opencode ;;' "$PREFIX/bin/ia"
+cmp "$PREFIX/bin/ia" "$PREFIX/bin/opencode"
+if grep -q 'Antigravity.*experimental' "$test_root/help.log"; then
+    printf '%s\n' 'FAIL Antigravity still has the experimental label in help' >&2
+    exit 1
+fi
+printf '%s\n' 'PASS Ubuntu update accepts Antigravity without the old label'
+
+rm "$PREFIX/bin/opencode"
 printf 'unknown_menu_format=true\n' > "$PREFIX/bin/ia"
 cp "$PREFIX/bin/ia" "$test_root/unknown-launcher.before"
 if bash "$project_root/scripts/add-opencode-ubuntu.sh" --yes > "$test_root/unknown-menu.log" 2>&1; then

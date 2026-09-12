@@ -6,7 +6,7 @@ show_help() {
     'Uso: ia [copilot|claude|codex|antigravity|agy|opencode|terminal] [argumentos]' \
         'Sem argumentos, abre o menu em uma sessao interativa.' \
     'Codex: execucao no sandbox nao validada para Android/PRoot.' \
-    'Antigravity CLI: integracao experimental, sem validacao em Android/PRoot.' \
+    'Antigravity CLI: comandos antigravity ou agy.' \
     'OpenCode: integracao experimental, sem validacao em Android/PRoot.'
 }
 
@@ -17,7 +17,7 @@ if [[ "$launcher_name" == ia ]]; then
             show_help
             exit 0
         fi
-        printf '\nTermux AI\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (experimental)\n4. Terminal Linux\n5. Google Antigravity CLI (experimental)\n6. OpenCode (experimental)\n0. Sair\n\n'
+        printf '\nTermux AI\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (experimental)\n4. Terminal Linux\n5. Google Antigravity CLI\n6. OpenCode (experimental)\n0. Sair\n\n'
         if ! read -r -p 'Escolha: ' selection; then
             exit 0
         fi

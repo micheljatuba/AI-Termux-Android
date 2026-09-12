@@ -31,13 +31,17 @@ Seus testes automatizados simulam dependencias: nao comprovam compatibilidade
 do novo ambiente com Android, logins ou chamadas reais a modelos.
 
 Antigravity usa a **CLI oficial do Google**, nao o IDE grafico nem um pacote
-npm de terceiros. A integracao e experimental: existem binarios oficiais para
-Linux ARM64 e x86_64, mas login, chaveiro e execucao em Android/PRoot ainda nao
-foram validados neste projeto.
+npm de terceiros, com binarios Linux ARM64 e x86_64. Na configuracao manual do
+Tab S9 com Ubuntu 26.04, a versao 1.2.1 passou nos comandos de versao e ajuda,
+e o usuario confirmou seu uso. O menu nao usa mais o rotulo experimental para
+Antigravity. Essa confirmacao nao valida todas as ferramentas, o chaveiro em
+outros aparelhos ou uma instalacao limpa no Debian deste repositorio.
 
 OpenCode usa o pacote oficial **`opencode-ai`**, com binarios Linux ARM64 e
-x86_64. A integracao tambem e experimental: os testes offline nao comprovam
-abertura da interface, autenticacao ou execucao de tarefas no Android/PRoot.
+x86_64. A integracao continua experimental. No Tab S9 com Ubuntu 26.04,
+a instalacao do OpenCode 1.18.30 e seus comandos de versao e ajuda foram
+validados. Autenticacao, interface e tarefas com modelos ainda precisam de
+teste; isso nao valida uma instalacao limpa no Debian deste repositorio.
 
 ## Instalar
 
@@ -262,8 +266,11 @@ original em uma pasta `~/.cache/termux-ai-opencode.*`. Se encontrar um formato
 diferente, um comando `opencode` de outra origem ou uma falha na instalacao,
 nao substitui o menu. Pode ser executado novamente sem duplicar a opcao.
 Falhas do npm podem deixar uma instalacao parcial do proprio OpenCode; os
-outros agentes nao sao reinstalados. Esse complemento foi testado com ambiente
-simulado, ainda nao executado no S9. O login no OpenCode continua a cargo do usuario.
+outros agentes nao sao reinstalados. Em 2026-09-11, esse complemento foi aplicado
+no Tab S9 com Ubuntu 26.04: OpenCode 1.18.30 respondeu a `--version` e `--help`,
+e o menu passou a mostrar a opcao 6. Os comandos de versao dos outros agentes
+continuaram funcionando. Nenhuma credencial foi lida ou reconfigurada, e o login
+no OpenCode continua a cargo do usuario.
 
 ### Backups
 
