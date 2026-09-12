@@ -1,216 +1,151 @@
-# Termux AI
+<div align="center">
 
-Instalador de GitHub Copilot CLI, Claude Code, Codex, Google Antigravity CLI
-e OpenCode para Termux no Android. O comando `ia` abre um menu; `copilot`,
-`claude`, `codex`, `antigravity` e `opencode` abrem cada agente.
-`agy` e o atalho nativo do Antigravity.
-O uso diario nao depende de PC, cabo USB, depuracao USB ou root.
+# AI Termux Android
 
-**Nao e Windows, nao funciona no iOS e nao promete compatibilidade com qualquer
-celular ou qualquer agente.** Os modelos em nuvem exigem internet e contas com
-acesso aos respectivos servicos. Este projeto nao inclui assinaturas ou creditos.
+**Cinco agentes de IA. Um terminal no Android.**
 
-## Compatibilidade
+GitHub Copilot &middot; Claude Code &middot; Codex &middot; Antigravity &middot; OpenCode
 
-| Ambiente | Situacao |
+[![Shell Checks](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml/badge.svg)](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml)
+![Android 11 ou superior](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)
+![Arquiteturas de 64 bits](https://img.shields.io/badge/64_bits-ARM64_%7C_x86__64-0969DA)
+
+[Instalacao](#instalacao) &middot; [Primeiro uso](#primeiro-uso) &middot; [Como funciona](#como-funciona) &middot; [Atualizar](#atualizar) &middot; [Compatibilidade](#compatibilidade)
+
+</div>
+
+Instale as CLIs oficiais, escolha um agente pelo menu `ia` e trabalhe nos seus
+projetos. Sem root, PC, cabo USB ou depuracao USB no uso diario.
+Os modelos em nuvem precisam de **internet e uma conta no provedor escolhido**.
+
+## Instalacao
+
+### 1. Prepare o Termux
+
+Instale o **Termux oficial** pela [Google Play](https://play.google.com/store/apps/details?id=com.termux),
+[F-Droid](https://f-droid.org/en/packages/com.termux/) ou
+[GitHub do Termux](https://github.com/termux/termux-app/releases).
+
+| Requisito | Minimo previsto |
 | --- | --- |
-| Android 11+, Termux ARM64 | Alvo principal; instalacao limpa ainda precisa de validacao em aparelho |
-| Android 11+, Termux x86_64 | Aceito pela pre-verificacao; nao testado em aparelho |
-| Google Play | Apenas o Termux oficial; precisa oferecer PRoot-Distro 5.3.0+ |
-| F-Droid ou releases oficiais do Termux | Alvos previstos, sujeitos a versao dos pacotes |
-| Android 32 bits, iPhone/iPad, apps homonimos da App Store | Nao suportados |
+| Sistema | Android 11 ou superior |
+| Arquitetura do Termux | ARM64 (`aarch64`) ou `x86_64` |
+| Espaco livre | 6 GiB para instalar e atualizar |
+| Memoria | 4 GB de RAM; 8 GB recomendados |
+| Pacotes | A variante do Termux deve oferecer PRoot-Distro 5.3.0+ |
 
-Reserve **6 GiB livres** e tenha pelo menos **4 GB de RAM**; 8 GB sao recomendados.
-O instalador verifica Android, arquitetura do Termux, espaco e versao do PRoot.
-Ter processador de 64 bits nao basta se o ambiente Termux instalado for de 32 bits.
+> [!IMPORTANT]
+> Nao misture aplicativos, plugins ou repositorios de variantes diferentes do
+> Termux. Preserve seus dados antes de trocar uma instalacao existente.
+> iOS e aplicativos homonimos da App Store nao sao suportados.
 
-O prototipo manual foi usado em um Galaxy Tab S9 com Termux da Google Play e
-Ubuntu 26.04. O usuario confirmou que o Copilot funcionou bem. O **novo instalador
-deste repositorio usa Debian com Node.js 24**, nao o Ubuntu daquele prototipo.
-Seus testes automatizados simulam dependencias: nao comprovam compatibilidade
-do novo ambiente com Android, logins ou chamadas reais a modelos.
+### 2. Instale os agentes
 
-Antigravity usa a **CLI oficial do Google**, nao o IDE grafico nem um pacote
-npm de terceiros, com binarios Linux ARM64 e x86_64. Na configuracao manual do
-Tab S9 com Ubuntu 26.04, a versao 1.2.1 passou nos comandos de versao e ajuda,
-e o usuario confirmou seu uso. O menu nao usa mais o rotulo experimental para
-Antigravity. Essa confirmacao nao valida todas as ferramentas, o chaveiro em
-outros aparelhos ou uma instalacao limpa no Debian deste repositorio.
-
-OpenCode usa o pacote oficial **`opencode-ai`**, com binarios Linux ARM64 e
-x86_64. A integracao continua experimental. No Tab S9 com Ubuntu 26.04,
-a instalacao do OpenCode 1.18.30 e seus comandos de versao e ajuda foram
-validados. Autenticacao, interface e tarefas com modelos ainda precisam de
-teste; isso nao valida uma instalacao limpa no Debian deste repositorio.
-
-## Instalar
-
-Instale o [Termux oficial](https://github.com/termux/termux-app#installation).
-Nao misture aplicativos, plugins ou repositorios de variantes diferentes.
-Nao desinstale um Termux existente sem antes preservar os seus dados.
-
-No Termux, execute:
+No **Termux**, execute o bloco abaixo. O instalador verifica o ambiente e pede
+confirmacao antes de instalar pacotes.
 
 ```sh
 pkg update && pkg install -y git
-git clone https://github.com/micheljatuba/AI-Termux-Android.git
-cd AI-Termux-Android
+git clone https://github.com/micheljatuba/AI-Termux-Android.git ~/AI-Termux-Android
+cd ~/AI-Termux-Android
 bash install.sh --check
 bash install.sh
 ```
 
-Revise os scripts antes de executa-los. Baixe o repositorio completo; executar
-somente um arquivo por `curl | bash` nao e suportado. Prefira clonar dentro da
-home privada do Termux, nao em Download ou no armazenamento compartilhado.
+Mantenha o projeto na home privada do Termux, fora de Download ou do armazenamento
+compartilhado. Revise os scripts antes de executar; baixe o repositorio completo.
 
-O instalador pede confirmacao, instala o PRoot oficial e cria um ambiente
-dedicado `termux-ai`, a partir da imagem oficial `node:24-bookworm-slim`.
-O Linux inclui Git, GitHub CLI (`gh`), ripgrep, nano e os cinco agentes.
-Os agentes rodam como o usuario Linux `node`, sem root real no Android.
+> [!NOTE]
+> Ja tem um menu `ia` ou Ubuntu configurado manualmente? Veja
+> [Instalacoes existentes](#instalacoes-existentes). O instalador nao substitui
+> comandos ou ambientes de outra origem.
 
-As versoes iniciais sao Codex 0.154.0, Copilot 1.0.83, Claude Code 2.1.269
-e OpenCode 1.18.30. Para o OpenCode, o npm baixa o pacote com `--ignore-scripts`
-e o instalador executa explicitamente apenas seu `postinstall.mjs` oficial,
-que seleciona o binario da plataforma. Nao libera scripts globalmente no npm.
-Antigravity segue o manifesto oficial de releases (1.2.1 na verificacao de
-2026-09-11). O instalador valida o dominio do pacote e seu SHA-512, extrai apenas
-o executavel e testa `agy --version` antes de substituir o binario existente.
-Nao executa o configurador de aliases/perfis do Antigravity.
-Node.js 24, pacotes Debian e atualizacoes automaticas dos fornecedores podem
-mudar; nao se trata de uma imagem integralmente fixada por hash.
-
-Opcoes adicionais:
-
-```sh
-bash install.sh --check
-bash install.sh --no-menu
-bash install.sh --yes
-```
-
-`--check` nao instala nem modifica arquivos. `--no-menu` desativa a abertura
-automatica do menu, inclusive em uma instalacao gerenciada anterior. `--yes`
-confirma somente a instalacao; nao autoriza acoes futuras dos agentes.
-
-Uma nova execucao preserva o Linux dedicado e os dados, verifica os pacotes e
-atualiza os atalhos gerenciados. Nao a execute enquanto os agentes estiverem
-trabalhando. Se ja existir `ia`, `codex`, `copilot`, `claude`, `antigravity`, `agy`,
-`opencode` ou um Linux `termux-ai` de outra origem, o instalador para sem substitui-los. Isso inclui
-o prototipo configurado manualmente no S9: sua migracao nao e automatica.
-
-## Usar
-
-Abra uma nova sessao Bash do Termux para ver o menu. Na sessao atual, execute:
+### 3. Abra o menu
 
 ```sh
 ia
 ```
 
-Use `0` para voltar ao shell. Para trabalhar em um projeto, abra a pasta antes
-do agente. Os atalhos preservam essa pasta e todos os argumentos:
+O menu tambem aparece em novas sessoes **Bash** do Termux. Escolha o numero do
+agente e pressione Enter. Use `0` para voltar ao shell.
+
+<details>
+<summary>Opcoes de instalacao</summary>
+
+| Opcao | O que faz |
+| --- | --- |
+| `bash install.sh --check` | Verifica o ambiente sem instalar nem modificar arquivos |
+| `bash install.sh --no-menu` | Instala os comandos sem abrir o menu automaticamente |
+| `bash install.sh --yes` | Confirma a instalacao sem pergunta interativa |
+
+`--yes` nao autoriza acoes futuras dos agentes. Para desativar um menu automatico
+ja gerenciado por este projeto, execute novamente com `--no-menu`.
+Outros shells podem usar `ia` manualmente; conexoes SSH e shells nao interativos
+nao recebem o menu.
+
+</details>
+
+## Primeiro uso
+
+Conecte a conta de cada agente, seguindo o fluxo oficial no navegador ou no
+terminal. As contas de outros agentes **nao sao copiadas automaticamente**.
+
+| Agente | Abrir | Conectar a conta |
+| --- | --- | --- |
+| GitHub Copilot CLI | `copilot` | `copilot login` |
+| Claude Code | `claude` | `claude auth login` |
+| Codex | `codex` | `codex login` |
+| Google Antigravity CLI | `antigravity` ou `agy` | Siga o fluxo ao abrir |
+| OpenCode | `opencode` | `opencode auth login` ou `/connect` na interface |
+
+Se o navegador nao abrir, use o link exibido pelo agente. Planos, limites e
+cobranca dependem de cada provedor; este projeto nao fornece assinaturas ou
+creditos. No OpenCode, `opencode models` lista os modelos disponiveis.
+
+**Abra o agente dentro da pasta em que deseja trabalhar:**
 
 ```sh
-mkdir -p ~/projetos
-cd ~/projetos
+mkdir -p ~/projetos/meu-projeto
+cd ~/projetos/meu-projeto
 copilot
 ```
 
-`claude`, `codex`, `antigravity` e `opencode` sao os outros atalhos. `ia terminal` abre o Linux para usar
-`git`, `gh`, `node`, `npm` ou instalar outras ferramentas compativeis com a sua
-arquitetura. O menu automatico atende ao Bash padrao; outros shells podem usar
-`ia` manualmente. Sessoes SSH e shells nao interativos nao recebem o menu.
+Os atalhos preservam a pasta atual e os argumentos. Use `ia terminal` para abrir
+o Linux e executar `git`, `gh`, `node` e `npm` no mesmo projeto.
 
-Para suprimir o menu em uma sessao: `TERMUX_AI_NO_MENU=1 bash -l`.
+### Na tela
 
-### Antigravity CLI
+![Menu real do Termux no Android com os cinco agentes e o terminal Ubuntu](docs/images/termux-menu-android.png)
 
-Escolha **5. Google Antigravity CLI** no menu ou execute uma das formas equivalentes:
+<sub>Captura real de uma instalacao Ubuntu existente no Android, recortada para
+mostrar apenas o menu. Essa instalacao preserva sua ordem original; em uma
+instalacao nova, Copilot, Claude e Codex ocupam as opcoes 1, 2 e 3.</sub>
 
-```sh
-antigravity
-agy
-ia antigravity
+## Como funciona
+
+```mermaid
+flowchart LR
+    android["Android + Termux"] --> menu["Menu ia e atalhos"]
+    menu --> linux["Linux via PRoot"]
+    linux --> cli["CLI escolhida"]
+    cli --> provider["Provedor de IA"]
 ```
 
-Execute apenas uma delas por vez, dentro da pasta do projeto. O primeiro uso
-apresenta o fluxo de autenticacao oficial. `antigravity --version` verifica o
-binario; nao confirma que o login ou o sandbox funcionam no aparelho.
+1. **Verifica o ambiente:** Android, arquitetura, espaco livre e conflitos com comandos existentes.
+2. **Prepara o Linux:** instala o PRoot oficial e cria o ambiente `termux-ai`, usando Debian com Node.js 24.
+3. **Instala as CLIs oficiais:** verifica os executaveis, sem pedir logins nem chamar modelos.
+4. **Cria os atalhos:** adiciona `ia` e os comandos dos agentes, com menu automatico opcional.
 
-### OpenCode
+O ambiente inclui **Git, GitHub CLI, ripgrep, nano e Node.js**. Os agentes rodam
+como o usuario Linux `node`, sem root real no Android. A imagem base e
+`node:24-bookworm-slim`; nao e necessario instalar ou executar Docker.
 
-Escolha **6. OpenCode**, a ultima opcao de agente, ou execute uma das formas:
+Isso nao transforma Android em Windows. PRoot fornece um ambiente Linux sobre
+o kernel do Android, com limitacoes de compatibilidade e isolamento.
 
-```sh
-opencode
-ia opencode
-```
+## Atualizar
 
-Use uma delas por vez, na pasta do projeto. Para conectar um provedor, execute
-`opencode auth login` ou use `/connect` dentro da interface do OpenCode.
-`opencode models` lista os modelos disponiveis. Veja a
-[documentacao oficial](https://opencode.ai/docs/cli/).
-
-OpenCode e um cliente para provedores, nao uma assinatura que libera todos os
-modelos. Login, limites e cobranca dependem do provedor escolhido. As contas
-dos outros agentes nao sao copiadas nem configuradas automaticamente.
-
-## Entrar Nas Contas
-
-Execute um comando por vez e conclua o fluxo no navegador do proprio aparelho:
-
-```sh
-copilot login
-claude auth login
-codex login
-opencode auth login
-```
-
-Se o navegador nao abrir automaticamente, abra o link mostrado pelo agente.
-O Codex tambem oferece `codex login --device-auth` quando a conta permite esse
-fluxo. As credenciais ficam na home do usuario `node` dentro do Linux dedicado.
-Nunca publique tokens, chaves, pastas de autenticacao ou backups do ambiente.
-
-O OpenCode guarda credenciais em `~/.local/share/opencode/auth.json` dentro
-do Linux em que ele roda. Digite chaves somente no prompt oficial, nunca em
-comandos que fiquem no historico, no repositorio ou nesta conversa.
-
-No Antigravity, inicie `antigravity` e siga o login apresentado. Segundo a
-[documentacao oficial](https://antigravity.google/docs/cli/install), a CLI pode
-usar navegador e chaveiro do sistema; no Linux isso pode exigir Secret Service
-e D-Bus, que nao estao configurados aqui. Nao ha garantia de login automatico
-nem de persistencia das credenciais no Android/PRoot. Se houver erro de chaveiro,
-consulte a documentacao antes de alterar o armazenamento de credenciais.
-Nao inventamos um comando `antigravity login` nem coletamos chaves de API.
-
-## Seguranca E Codex
-
-**PRoot nao e um sandbox de seguranca.** Mesmo com o usuario `node`, os agentes
-podem acessar arquivos que o Android disponibiliza ao Termux. Revise os pedidos
-de permissao e mantenha backups dos projetos.
-
-No prototipo do S9, Codex iniciou, mas a execucao de um comando no sandbox padrao
-falhou. O teste alternativo de Landlock falhou com `Sandbox(LandlockRestrict)`.
-Por isso, **Codex e experimental neste projeto**: instalar e exibir a versao
-nao significa que a execucao protegida de comandos esteja funcionando.
-
-As permissoes e o sandbox do Antigravity tambem permanecem nos padroes do
-fornecedor. Veja [permissoes e sandbox](https://antigravity.google/docs/cli/sandbox).
-Nenhuma falha de sandbox e contornada automaticamente pelo instalador.
-
-As permissoes do OpenCode permanecem nos padroes do fornecedor. O lancador
-nao acrescenta `--auto`, nao publica um servidor na rede e nao configura
-compartilhamento automatico de sessoes. Revise as
-[permissoes do OpenCode](https://opencode.ai/docs/permissions/) antes de trabalhar
-com arquivos importantes; confirmacoes de ferramentas nao sao isolamento de SO.
-
-Este instalador nao desativa sandboxes, nao habilita aprovacao irrestrita, nao
-modifica protecoes do Android e nao configura servidores SSH ou ADB. Se um
-agente exigir recursos de kernel indisponiveis no Android, a instalacao de
-Linux por PRoot nao resolve essa limitacao.
-
-## Atualizar E Preservar
-
-Para receber os novos atalhos, incluindo Antigravity e OpenCode, em uma instalacao
-gerenciada por este repositorio, saia dos agentes e execute no Termux:
+Saia dos agentes antes de atualizar uma instalacao **gerenciada por este projeto**:
 
 ```sh
 cd ~/AI-Termux-Android
@@ -218,40 +153,51 @@ git pull --ff-only
 bash install.sh
 ```
 
-Esse comando preserva o Linux dedicado. Use `--no-menu` novamente se nao deseja
-o menu automatico. Ele nao migra a instalacao manual do S9.
+O Linux dedicado e seus dados sao reaproveitados. Use `--no-menu` novamente se
+nao deseja o menu automatico. Comandos personalizados nao sao sobrescritos.
 
-Para atualizar deliberadamente os agentes, fora de uma tarefa em andamento:
+<details>
+<summary>Atualizar apenas as CLIs e consultar versoes</summary>
 
 ```sh
 ia terminal
 npm install -g --prefix "$HOME/.local" @openai/codex @github/copilot
 claude update
+agy update
 opencode upgrade
 exit
 ```
 
-Reexecutar o instalador pode retornar as versoes npm para as versoes iniciais
-indicadas acima. Atualizacoes dos agentes podem alterar a compatibilidade.
-O Antigravity possui atualizacao automatica pelo fornecedor; reexecutar este
-instalador tambem consulta seu manifesto oficial atual. Nao remova o binario
-existente para tentar atualizar, pois um download com erro deixaria o agente indisponivel.
-
-### Ubuntu Manual (S9)
-
-**No S9 configurado manualmente, nao execute o instalador completo.** Existe
-um complemento para acrescentar somente OpenCode ao Ubuntu e ao menu ja usados,
-sem recriar ambientes ou reconfigurar Copilot, Claude, Codex ou Antigravity.
-Ele nao precisa de depuracao USB nem de acesso remoto.
-
-Se ainda nao clonou o repositorio no Termux:
+Para conferir as versoes pelo Termux:
 
 ```sh
-pkg install -y git
-git clone https://github.com/micheljatuba/AI-Termux-Android.git ~/AI-Termux-Android
+copilot --version
+claude --version
+codex --version
+antigravity --version
+opencode --version
 ```
 
-Saia dos agentes e, no Termux (fora do Ubuntu), execute:
+O instalador parte de Codex 0.154.0, Copilot 1.0.83, Claude Code 2.1.269 e
+OpenCode 1.18.30. Antigravity segue seu manifesto oficial. Reexecutar o instalador
+pode retornar os pacotes npm para as versoes iniciais; atualizacoes dos fornecedores
+podem mudar a compatibilidade.
+
+No OpenCode, o instalador executa explicitamente apenas o pos-instalador oficial,
+sem liberar scripts globalmente no npm. O download do Antigravity verifica o
+dominio do pacote e o SHA-512 antes de instalar o binario. O configurador de
+aliases e perfis do Antigravity nao e executado.
+
+</details>
+
+## Instalacoes existentes
+
+**Ja usa Ubuntu e um menu manual no Android? Nao execute o instalador completo
+por cima dessa configuracao.** O complemento abaixo acrescenta apenas o OpenCode
+a um menu compativel, sem migrar contas nem reinstalar os outros agentes.
+
+Clone este repositorio, caso ainda nao o tenha, usando o comando da
+[instalacao](#instalacao). Depois, no Termux e **fora do Ubuntu**:
 
 ```sh
 cd ~/AI-Termux-Android
@@ -260,25 +206,71 @@ bash scripts/add-opencode-ubuntu.sh
 ia
 ```
 
-O complemento reconhece o menu manual que usa Ubuntu com Antigravity na opcao
-5 e acrescenta OpenCode na opcao 6. Preserva a numeracao anterior e salva o menu
-original em uma pasta `~/.cache/termux-ai-opencode.*`. Se encontrar um formato
-diferente, um comando `opencode` de outra origem ou uma falha na instalacao,
-nao substitui o menu. Pode ser executado novamente sem duplicar a opcao.
-Falhas do npm podem deixar uma instalacao parcial do proprio OpenCode; os
-outros agentes nao sao reinstalados. Em 2026-09-11, esse complemento foi aplicado
-no Tab S9 com Ubuntu 26.04: OpenCode 1.18.30 respondeu a `--version` e `--help`,
-e o menu passou a mostrar a opcao 6. Os comandos de versao dos outros agentes
-continuaram funcionando. Nenhuma credencial foi lida ou reconfigurada, e o login
-no OpenCode continua a cargo do usuario.
+O complemento reconhece o menu Ubuntu com Antigravity na opcao 5 e acrescenta
+OpenCode na opcao 6. Preserva as opcoes anteriores e salva uma copia do menu
+em `~/.cache/termux-ai-opencode.*`. Se o formato for desconhecido ou existir
+um comando `opencode` de outra origem, ele para sem substituir o menu.
+Nao e uma migracao generica de qualquer instalacao Ubuntu.
 
-### Backups
+## Compatibilidade
 
-Os arquivos gerenciados ficam em `~/.local/share/termux-ai` no Termux. O Bash
-existente recebe somente uma linha de carregamento do menu; o original fica
-em `~/.local/share/termux-ai/bashrc.before`, quando havia um arquivo anterior.
+**O alvo e Android 11+ de 64 bits.** Isso nao garante o funcionamento de todas
+as CLIs em qualquer configuracao. A tabela separa os testes locais do uso real:
 
-Para backup do Linux dedicado, escolha um nome de arquivo ainda inexistente:
+| Componente | Situacao observada em Android com Ubuntu |
+| --- | --- |
+| Copilot CLI | Uso confirmado pelo usuario |
+| Antigravity CLI | Versao e ajuda verificadas; uso confirmado pelo usuario |
+| Claude Code | Diagnostico de instalacao e tela inicial verificados; uso com modelos pendente |
+| OpenCode | Instalacao, versao e ajuda verificadas; interface, login e tarefas com modelos pendentes |
+| Codex | Inicia, mas o sandbox de comandos falhou com `Sandbox(LandlockRestrict)` |
+
+As verificacoes em aparelho usaram **Android com Ubuntu 26.04**. A instalacao
+limpa do ambiente **Debian** criado pelo instalador ainda precisa de validacao
+completa. Os testes automatizados e o CI usam dependencias simuladas: nao fazem
+login, nao chamam modelos e nao substituem testes no Android.
+
+<details>
+<summary>Limites conhecidos e solucao de problemas</summary>
+
+- **Codex:** continua experimental. Exibir `--version` nao confirma que a execucao protegida de comandos funciona.
+- **OpenCode:** continua experimental ate validar interface, autenticacao e tarefas com modelos.
+- **Antigravity:** o login Linux pode depender de Secret Service/D-Bus; persistencia de credenciais nao e garantida em todas as configuracoes PRoot.
+- **Arquitetura:** um processador de 64 bits com Termux de 32 bits nao atende aos requisitos.
+- **Repositorios:** se a sua variante nao oferece PRoot-Distro 5.3.0+, nao misture repositorios para forcar a instalacao.
+- **Conflitos:** comandos dos agentes de outra origem exigem migracao explicita.
+- **Interrupcao:** confirme que nao existe outra instalacao ativa antes de remover um `install.lock` remanescente. Um Linux parcial nao e apagado automaticamente.
+
+Referencias: [Termux](https://github.com/termux/termux-app#installation),
+[PRoot-Distro](https://github.com/termux/proot-distro),
+[Antigravity](https://antigravity.google/docs/cli/install) e
+[OpenCode](https://opencode.ai/docs/cli/).
+
+</details>
+
+## Seguranca e backups
+
+> [!WARNING]
+> **PRoot nao e um sandbox de seguranca.** Os agentes podem acessar arquivos
+> disponiveis ao Termux. Revise as permissoes e mantenha backups dos projetos.
+
+O instalador nao desativa sandboxes, nao habilita aprovacao irrestrita, nao
+configura compartilhamento automatico de sessoes e nao abre acesso SSH/ADB.
+As permissoes dos agentes permanecem nos padroes de cada fornecedor.
+
+Digite chaves somente no prompt oficial do agente. Nao publique credenciais,
+logs privados ou backups. No OpenCode, as credenciais ficam em
+`~/.local/share/opencode/auth.json`, dentro do Linux em que ele roda.
+
+<details>
+<summary>Onde ficam os dados e como fazer backup</summary>
+
+O estado do instalador fica em `~/.local/share/termux-ai` no Termux. Quando havia
+um arquivo Bash anterior, sua copia e preservada em
+`~/.local/share/termux-ai/bashrc.before`. O menu usa apenas uma linha adicional
+de carregamento nesse arquivo.
+
+Para copiar o Linux dedicado, escolha um nome de arquivo ainda inexistente:
 
 ```sh
 proot-distro backup termux-ai --output ~/termux-ai-backup.tar.gz
@@ -286,35 +278,21 @@ proot-distro backup termux-ai --output ~/termux-ai-backup.tar.gz
 
 Esse backup pode conter credenciais. Guarde-o em local privado. Projetos na
 home do Termux, fora do Linux dedicado, precisam de backup separado.
-Nao use `proot-distro reset` ou `remove` como tentativa de reparo sem backup:
-esses comandos apagam os dados do ambiente.
+Nao use `proot-distro reset` ou `remove` como reparo sem backup: eles apagam
+os dados do ambiente.
 
-Se houver interrupcao, o instalador nao apaga automaticamente um Linux parcial.
-Se `install.lock` ficar para tras, confirme que nao ha outra instalacao ativa
-antes de remover somente o diretorio de lock. Conflitos com comandos existentes
-exigem migracao explicita; nao apague atalhos de outra instalacao automaticamente.
+</details>
 
 ## Desenvolvimento
 
-Os testes exigem Bash, Node.js 22+ e utilitarios GNU (incluindo `tar` e `sha512sum`).
+Os testes exigem Bash, Node.js 22+ e utilitarios GNU, incluindo `tar` e `sha512sum`.
 
 ```sh
 bash tests/run.sh
 shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/add-opencode-ubuntu.sh scripts/menu.bash tests/run.sh
 ```
 
-A suite e offline e usa pastas temporarias. Verifica argumentos, recursao,
-pre-verificacao sem efeitos, conflitos, preservacao de configuracoes e repeticao.
-O fluxo do Antigravity e exercitado com downloads simulados, mas parse de JSON,
-verificacao SHA-512 e extracao reais, incluindo falhas antes de substituir o binario.
-O fluxo do OpenCode usa um pos-instalador simulado para testar sua execucao
-explicita, falhas de instalacao/inicializacao e preservacao dos outros agentes.
-O complemento Ubuntu testa o backup, a opcao 6 e a recusa de comandos e menus
-desconhecidos. Nenhum desses testes autentica ou chama provedores de IA.
-O workflow do GitHub executa esses testes e o ShellCheck; nao faz logins nem
-instala agentes em um Android real.
-
-Antes de anunciar suporte a um aparelho, teste uma instalacao limpa, abertura
-do menu, login e uma tarefa controlada de leitura/edicao/execucao em cada agente.
-Registre modelo do aparelho, Android, origem do Termux, versoes e limitacoes,
-sem incluir identificadores pessoais ou credenciais.
+A suite verifica argumentos, conflitos, preservacao de configuracoes,
+repeticao da instalacao, validacao de downloads e atualizacao do menu Ubuntu.
+Antes de anunciar suporte a uma nova configuracao Android, teste instalacao,
+login e uma tarefa controlada em cada agente, sem publicar dados pessoais.

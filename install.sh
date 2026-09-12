@@ -77,7 +77,7 @@ printf '%s\n' \
     'Sera usado um Linux dedicado: termux-ai (Debian + Node.js 24).' \
     'Os agentes exigem contas proprias e internet. PRoot nao e isolamento de seguranca.' \
     'Codex permanece experimental: o sandbox falhou no teste inicial em Android/PRoot.' \
-    'Antigravity CLI: uso confirmado pelo usuario no Tab S9; outros aparelhos precisam de validacao.' \
+    'Antigravity CLI: uso confirmado pelo usuario no Android; outras configuracoes precisam de validacao.' \
     'OpenCode permanece experimental: login e execucao ainda nao testados em Android/PRoot.'
 if (( check_only )); then
     printf '%s\n' 'Pre-verificacao concluida. Nada foi instalado; a execucao real dos agentes ainda precisa ser testada.'

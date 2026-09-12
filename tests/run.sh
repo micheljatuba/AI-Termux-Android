@@ -396,7 +396,7 @@ set -euo pipefail
 launcher_name="${0##*/}"
 if [[ "$launcher_name" == ia ]]; then
     if [[ $# -eq 0 ]]; then
-        printf '\nIA no Tab S9\n\n1. Codex\n2. GitHub Copilot\n3. Claude Code\n4. Terminal Ubuntu\n5. Google Antigravity CLI (experimental)\n0. Sair\n\n'
+        printf '\nIA no Android\n\n1. Codex\n2. GitHub Copilot\n3. Claude Code\n4. Terminal Ubuntu\n5. Google Antigravity CLI (experimental)\n0. Sair\n\n'
         read -r -p 'Escolha: ' selection
         case "$selection" in
             1) tool_name=codex ;;
