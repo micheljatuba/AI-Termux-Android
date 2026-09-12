@@ -142,13 +142,8 @@ para produzir os prints; exibir a versao nao comprova tarefas com modelos.</sub>
 
 ## Como funciona
 
-```mermaid
-flowchart LR
-    android["Android + Termux"] --> menu["Menu ia e atalhos"]
-    menu --> linux["Linux via PRoot"]
-    linux --> cli["CLI escolhida"]
-    cli --> provider["Provedor de IA"]
-```
+**Android + Termux** &rarr; **Menu ia e atalhos** &rarr; **Linux via PRoot**
+&rarr; **CLI escolhida** &rarr; **Provedor de IA**
 
 1. **Verifica o ambiente:** Android, arquitetura, espaco livre e conflitos com comandos existentes.
 2. **Prepara o Linux:** instala o PRoot oficial e cria o ambiente `termux-ai`, usando Debian com Node.js 24.
