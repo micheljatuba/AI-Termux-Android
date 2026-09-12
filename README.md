@@ -9,14 +9,30 @@ GitHub Copilot &middot; Claude Code &middot; Codex &middot; Antigravity &middot;
 [![Shell Checks](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml/badge.svg)](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml)
 ![Android 11 ou superior](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)
 ![Arquiteturas de 64 bits](https://img.shields.io/badge/64_bits-ARM64_%7C_x86__64-0969DA)
+[![Instalacao testada em Android 12](https://img.shields.io/badge/Instalacao_testada-Android_12-198754)](#compatibilidade)
 
-[Instalacao](#instalacao) &middot; [Primeiro uso](#primeiro-uso) &middot; [Como funciona](#como-funciona) &middot; [Atualizar](#atualizar) &middot; [Compatibilidade](#compatibilidade)
+[Instalar](#instalacao) &middot; [Primeiro uso](#primeiro-uso) &middot; [Na tela](#na-tela) &middot; [Atualizar](#atualizar) &middot; [Compatibilidade](#compatibilidade) &middot; [Ajuda](#ajuda)
 
 </div>
 
-Instale as CLIs oficiais, escolha um agente pelo menu `ia` e trabalhe nos seus
-projetos. Sem root, PC, cabo USB ou depuracao USB no uso diario.
+Um ambiente de desenvolvimento com **cinco CLIs oficiais de IA, Git e Node.js**
+no Android. Escolha pelo menu `ia` ou abra seu agente diretamente na pasta do
+projeto. Sem root no Android e sem depender de um PC no uso diario.
+
+<p align="center">
+    <img src="docs/images/surface-duo-menu.png" width="760" alt="Menu real no Surface Duo: Copilot, Claude, Codex, Terminal Linux, Antigravity e OpenCode">
+    <br>
+    <sub>Menu da instalacao nova no Surface Duo. Captura real de 12/09/2026, recortada apenas para mostrar o terminal.</sub>
+</p>
+
+> [!NOTE]
+> **Instalacao e inicializacao verificadas em aparelho real.** Menu, atalhos,
+> versao e ajuda dos cinco agentes passaram no Surface Duo com Android 12.
+> Login e tarefas com modelos ainda nao foram testados nesse ambiente.
+> Consulte os [resultados e limites](#compatibilidade) antes de instalar.
+
 Os modelos em nuvem precisam de **internet e uma conta no provedor escolhido**.
+Assinaturas, creditos e limites de uso nao estao incluidos neste projeto.
 
 ## Instalacao
 
@@ -115,11 +131,14 @@ o Linux e executar `git`, `gh`, `node` e `npm` no mesmo projeto.
 
 ### Na tela
 
-![Menu real do Termux no Android com os cinco agentes e o terminal Ubuntu](docs/images/termux-menu-android.png)
+**Cinco executaveis, uma instalacao.** Abaixo, a saida real dos comandos
+`--version` executados pelos atalhos do Termux no Surface Duo:
 
-<sub>Captura real de uma instalacao Ubuntu existente no Android, recortada para
-mostrar apenas o menu. Essa instalacao preserva sua ordem original; em uma
-instalacao nova, Copilot, Claude e Codex ocupam as opcoes 1, 2 e 3.</sub>
+![Versoes reais de Copilot, Claude, Codex, Antigravity e OpenCode no Surface Duo](docs/images/surface-duo-versions.png)
+
+<sub>Captura de 12/09/2026. Os comandos foram executados em sequencia e a imagem
+foi apenas recortada, sem substituir resultados. Nenhuma conta foi conectada
+para produzir os prints; exibir a versao nao comprova tarefas com modelos.</sub>
 
 ## Como funciona
 
@@ -214,21 +233,34 @@ Nao e uma migracao generica de qualquer instalacao Ubuntu.
 
 ## Compatibilidade
 
-**O alvo e Android 11+ de 64 bits.** Isso nao garante o funcionamento de todas
-as CLIs em qualquer configuracao. A tabela separa os testes locais do uso real:
+**Instalacao limpa validada em Android 12 / ARM64, sem root no Android.**
+O alvo continua sendo Android 11+ de 64 bits; um aparelho testado nao garante
+compatibilidade com todas as configuracoes.
 
-| Componente | Situacao observada em Android com Ubuntu |
-| --- | --- |
-| Copilot CLI | Uso confirmado pelo usuario |
-| Antigravity CLI | Versao e ajuda verificadas; uso confirmado pelo usuario |
-| Claude Code | Diagnostico de instalacao e tela inicial verificados; uso com modelos pendente |
-| OpenCode | Instalacao, versao e ajuda verificadas; interface, login e tarefas com modelos pendentes |
-| Codex | Inicia, mas o sandbox de comandos falhou com `Sandbox(LandlockRestrict)` |
+| Agente | Versao testada | Verificacao no aparelho |
+| --- | --- | --- |
+| GitHub Copilot CLI | 1.0.83 | Versao e ajuda |
+| Claude Code | 2.1.269 | Versao e ajuda |
+| Codex | 0.154.0 | Versao e ajuda |
+| Google Antigravity CLI | 1.2.1 | Versao e ajuda |
+| OpenCode | 1.18.30 | Versao e ajuda |
 
-As verificacoes em aparelho usaram **Android com Ubuntu 26.04**. A instalacao
-limpa do ambiente **Debian** criado pelo instalador ainda precisa de validacao
-completa. Os testes automatizados e o CI usam dependencias simuladas: nao fazem
-login, nao chamam modelos e nao substituem testes no Android.
+Em **12/09/2026**, o procedimento deste repositorio foi executado em um
+**Surface Duo**, com Termux 0.118.3, PRoot-Distro 5.8.0, Debian 12 e Node.js
+24.21.0. Tambem passaram o menu automatico, os atalhos, a execucao como usuario
+Linux `node` (UID 1000) e a leitura/escrita em uma pasta com espacos no nome.
+Nenhum acesso root ao Android foi usado.
+
+A primeira execucao nao concluiu. Repetir o mesmo instalador reaproveitou o
+ambiente e terminou com codigo de saida 0, sem alterar o codigo. A causa da
+interrupcao nao foi identificada. **Logins, conversas com modelos e tarefas
+dos agentes nao foram testados nessa instalacao.**
+
+Em uma instalacao Ubuntu separada, o usuario confirmou uso de Copilot e
+Antigravity; o sandbox do Codex falhou com `Sandbox(LandlockRestrict)`.
+Esses resultados nao comprovam o uso completo no Debian. Os testes
+automatizados e o CI usam dependencias simuladas e nao substituem testes
+no Android.
 
 <details>
 <summary>Limites conhecidos e solucao de problemas</summary>
@@ -239,7 +271,7 @@ login, nao chamam modelos e nao substituem testes no Android.
 - **Arquitetura:** um processador de 64 bits com Termux de 32 bits nao atende aos requisitos.
 - **Repositorios:** se a sua variante nao oferece PRoot-Distro 5.3.0+, nao misture repositorios para forcar a instalacao.
 - **Conflitos:** comandos dos agentes de outra origem exigem migracao explicita.
-- **Interrupcao:** confirme que nao existe outra instalacao ativa antes de remover um `install.lock` remanescente. Um Linux parcial nao e apagado automaticamente.
+- **Interrupcao:** se a execucao anterior ja terminou, volte a `~/AI-Termux-Android` e execute `bash install.sh` novamente. O ambiente gerenciado e reaproveitado. Se houver aviso de `install.lock`, confirme que nao existe outra instalacao ativa antes de agir; nao apague o Linux como tentativa de reparo.
 
 Referencias: [Termux](https://github.com/termux/termux-app#installation),
 [PRoot-Distro](https://github.com/termux/proot-distro),
@@ -247,6 +279,39 @@ Referencias: [Termux](https://github.com/termux/termux-app#installation),
 [OpenCode](https://opencode.ai/docs/cli/).
 
 </details>
+
+## Ajuda
+
+<details>
+<summary>Preciso de PC, cabo USB ou root?</summary>
+
+Nao. A instalacao pode ser feita diretamente no Termux e o uso diario acontece
+no Android. O PC e o USB foram usados para acompanhar o teste e capturar as
+telas, nao como dependencia do projeto. Nenhum acesso root ao Android foi usado.
+
+</details>
+
+<details>
+<summary>Os modelos rodam no aparelho? Posso usar sem internet?</summary>
+
+As CLIs e as ferramentas de desenvolvimento rodam no Android, dentro do Linux
+via PRoot. Os modelos dos provedores em nuvem dependem de internet e de uma
+conta. Este instalador nao baixa modelos para inferencia offline no aparelho.
+
+</details>
+
+<details>
+<summary>O projeto inclui os planos dos provedores?</summary>
+
+Nao. Cada provedor define autenticacao, modelos, limites e cobranca. Ter uma
+assinatura em um servico nao conecta nem libera automaticamente os outros.
+
+</details>
+
+**Encontrou um problema?** [Abra uma issue](https://github.com/micheljatuba/AI-Termux-Android/issues/new)
+com a versao do Android e do Termux, arquitetura, comando executado e a mensagem
+de erro. Remova tokens, emails, caminhos pessoais e outros dados privados antes
+de enviar logs ou capturas. Informe se e uma instalacao nova ou uma atualizacao.
 
 ## Seguranca e backups
 
@@ -296,3 +361,10 @@ A suite verifica argumentos, conflitos, preservacao de configuracoes,
 repeticao da instalacao, validacao de downloads e atualizacao do menu Ubuntu.
 Antes de anunciar suporte a uma nova configuracao Android, teste instalacao,
 login e uma tarefa controlada em cada agente, sem publicar dados pessoais.
+
+---
+
+Projeto independente de integracao. Termux, as CLIs e os servicos de IA
+continuam sujeitos as licencas e condicoes dos respectivos fornecedores.
+
+[Relatar um problema](https://github.com/micheljatuba/AI-Termux-Android/issues/new) &middot; [Ver testes](https://github.com/micheljatuba/AI-Termux-Android/actions) &middot; [Voltar ao topo](#ai-termux-android)
