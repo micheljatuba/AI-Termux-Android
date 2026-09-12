@@ -4,5 +4,6 @@
 .claude/
 .copilot/
 .gemini/antigravity-cli/
+.local/share/opencode/
 node_modules/
 *.log

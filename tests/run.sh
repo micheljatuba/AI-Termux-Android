@@ -39,7 +39,7 @@ assert_equal "${actual_args[14]}" '"quoted"' 'preserves quotes'
 assert_equal "${actual_args[15]}" '' 'preserves empty arguments'
 printf '%s\n' 'PASS launcher argument transport'
 
-for tool_name in codex copilot claude antigravity agy; do
+for tool_name in codex copilot claude antigravity agy opencode; do
     cp "$project_root/bin/ia" "$test_root/bin/$tool_name"
     bash "$test_root/bin/$tool_name" --version
     mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
@@ -62,6 +62,15 @@ for tool_name in antigravity agy; do
 done
 printf '%s\n' 'PASS Antigravity aliases and argument transport'
 
+bash "$project_root/bin/ia" opencode auth login --provider 'GitHub Copilot'
+mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+assert_equal "${actual_args[11]}" opencode 'uses the official OpenCode command'
+assert_equal "${actual_args[12]}" auth 'preserves the auth subcommand'
+assert_equal "${actual_args[13]}" login 'preserves the login action'
+assert_equal "${actual_args[14]}" --provider 'preserves the provider flag'
+assert_equal "${actual_args[15]}" 'GitHub Copilot' 'preserves provider names with spaces'
+printf '%s\n' 'PASS OpenCode auth argument transport'
+
 bash "$project_root/bin/ia" terminal -c 'printf terminal-ok'
 mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
 assert_equal "${actual_args[11]}" /bin/bash 'opens the Linux terminal'
@@ -69,7 +78,7 @@ assert_equal "${actual_args[12]}" -l 'loads the terminal profile'
 assert_equal "${actual_args[14]}" 'printf terminal-ok' 'preserves terminal command'
 printf '%s\n' 'PASS terminal dispatch'
 
-for tool_name in claude antigravity agy; do
+for tool_name in claude antigravity agy opencode; do
     if TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" "$tool_name" > "$test_root/nested.log" 2>&1; then
         printf '%s\n' 'FAIL nested launcher was accepted' >&2
         exit 1
@@ -83,6 +92,7 @@ bash "$project_root/bin/ia" --help > "$test_root/help.log"
 bash "$project_root/bin/ia" < /dev/null >> "$test_root/help.log"
 test ! -e "$TERMUX_AI_TEST_ARGS"
 grep -q 'Uso:' "$test_root/help.log"
+grep -q 'OpenCode:' "$test_root/help.log"
 if bash "$project_root/bin/ia" unknown > /dev/null 2>&1; then
     printf '%s\n' 'FAIL unknown command was accepted' >&2
     exit 1
@@ -168,7 +178,7 @@ test ! -e "$TERMUX_AI_TEST_INSTALL_LOG"
 test ! -e "$HOME/.local"
 printf '%s\n' 'PASS read-only preflight and unsupported environments'
 
-for tool_name in copilot antigravity agy; do
+for tool_name in copilot antigravity agy opencode; do
     printf 'existing launcher\n' > "$PREFIX/bin/$tool_name"
     if bash "$project_root/install.sh" --yes > "$test_root/conflict.log" 2>&1; then
         printf '%s\n' 'FAIL existing command was overwritten' >&2
@@ -197,7 +207,7 @@ bash "$project_root/install.sh" --yes > "$test_root/reinstall.log"
 assert_equal "$(grep -c '^proot install ' "$TERMUX_AI_TEST_INSTALL_LOG")" 1 'does not reinstall the Linux image'
 assert_equal "$(grep -c 'menu.bash' "$HOME/.bashrc")" 1 'does not duplicate the startup hook'
 assert_equal "$(< "$PREFIX/var/lib/proot-distro/containers/ubuntu/rootfs/project")" 'keep this project' 'preserves other Linux data'
-for tool_name in ia codex copilot claude antigravity agy; do
+for tool_name in ia codex copilot claude antigravity agy opencode; do
     test -x "$PREFIX/bin/$tool_name"
     cmp "$PREFIX/bin/$tool_name" "$state_dir/bin/ia"
 done
@@ -251,6 +261,24 @@ TERMUX_AI_TEST_AGY_SHA512="$(sha512sum "$TERMUX_AI_TEST_AGY_PAYLOAD" | awk '{ pr
 export TERMUX_AI_TEST_AGY_SHA512
 cat > "$test_root/bin/npm" <<'MOCK'
 #!/usr/bin/env bash
+set -euo pipefail
+if [[ " $* " == *' opencode-ai@1.18.30 '* ]]; then
+    [[ " $* " == *' --ignore-scripts '* ]] || exit 2
+    [[ " $* " == *" --prefix $HOME/.local "* ]] || exit 2
+    if [[ ${TERMUX_AI_TEST_OPENCODE_NPM_FAILURE:-0} != 0 ]]; then
+        exit 3
+    fi
+    mkdir -p "$HOME/.local/lib/node_modules/opencode-ai"
+    cat > "$HOME/.local/lib/node_modules/opencode-ai/postinstall.mjs" <<'NODE'
+import { writeFileSync, chmodSync } from 'node:fs';
+if (process.env.TERMUX_AI_TEST_OPENCODE_POSTINSTALL_FAILURE === '1') process.exit(4);
+const target = new URL('../../../bin/opencode', import.meta.url);
+writeFileSync(target, '#!/usr/bin/env bash\nprintf "opencode mock 1.18.30\\n"\nexit "${TERMUX_AI_TEST_OPENCODE_VERSION_FAILURE:-0}"\n');
+chmodSync(target, 0o755);
+console.log('OpenCode postinstall executed');
+NODE
+    exit 0
+fi
 for tool_name in codex copilot; do
     printf '#!/usr/bin/env bash\nprintf "%s mock\\n"\n' "$tool_name" > "$HOME/.local/bin/$tool_name"
     chmod +x "$HOME/.local/bin/$tool_name"
@@ -297,6 +325,10 @@ chmod +x "$test_root/bin/npm" "$test_root/bin/curl"
 printf 'alias antigravity=existing-editor\n' > "$HOME/.bashrc"
 cp "$HOME/.bashrc" "$test_root/guest-bashrc.before"
 bash "$project_root/scripts/setup-linux.sh" agents > "$test_root/guest-setup.log"
+test -x "$HOME/.local/bin/opencode"
+grep -q 'OpenCode postinstall executed' "$test_root/guest-setup.log"
+grep -q 'opencode mock 1.18.30' "$test_root/guest-setup.log"
+printf '%s\n' 'PASS OpenCode package, explicit postinstall and version check'
 test -x "$HOME/.local/bin/agy"
 grep -q 'agy mock 1.2.1' "$test_root/guest-setup.log"
 cmp "$HOME/.bashrc" "$test_root/guest-bashrc.before"
@@ -331,7 +363,127 @@ fi
 cmp "$HOME/.local/bin/agy" "$test_root/agy.before"
 printf '%s\n' 'PASS Antigravity startup failure preserves the installed binary'
 
-for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash tests/run.sh; do
+for failure_flag in TERMUX_AI_TEST_OPENCODE_NPM_FAILURE=1 TERMUX_AI_TEST_OPENCODE_POSTINSTALL_FAILURE=1 TERMUX_AI_TEST_OPENCODE_VERSION_FAILURE=5; do
+    : > "$TERMUX_AI_TEST_DOWNLOAD_LOG"
+    if env "$failure_flag" bash "$project_root/scripts/setup-linux.sh" agents > "$test_root/opencode-failure.log" 2>&1; then
+        printf 'FAIL OpenCode failure ignored: %s\n' "$failure_flag" >&2
+        exit 1
+    fi
+    test ! -s "$TERMUX_AI_TEST_DOWNLOAD_LOG"
+done
+printf '%s\n' 'PASS OpenCode install and startup failures stop the setup'
+
+for tool_name in codex copilot claude agy; do
+    cp "$HOME/.local/bin/$tool_name" "$test_root/$tool_name.before-opencode"
+done
+: > "$TERMUX_AI_TEST_DOWNLOAD_LOG"
+bash "$project_root/scripts/setup-linux.sh" opencode > "$test_root/opencode-only.log"
+grep -q 'opencode mock 1.18.30' "$test_root/opencode-only.log"
+test ! -s "$TERMUX_AI_TEST_DOWNLOAD_LOG"
+for tool_name in codex copilot claude agy; do
+    cmp "$HOME/.local/bin/$tool_name" "$test_root/$tool_name.before-opencode"
+done
+printf '%s\n' 'PASS OpenCode-only setup preserves the other agents'
+
+export HOME="$test_root/ubuntu-home"
+export PREFIX="$test_root/ubuntu-prefix"
+export TERMUX__PREFIX="$PREFIX"
+mkdir -p "$HOME" "$PREFIX/bin"
+cp "$test_root/prefix/bin/pkg" "$PREFIX/bin/pkg"
+cat > "$PREFIX/bin/ia" <<'LEGACY'
+#!/usr/bin/env bash
+set -euo pipefail
+launcher_name="${0##*/}"
+if [[ "$launcher_name" == ia ]]; then
+    if [[ $# -eq 0 ]]; then
+        printf '\nIA no Tab S9\n\n1. Codex\n2. GitHub Copilot\n3. Claude Code\n4. Terminal Ubuntu\n5. Google Antigravity CLI (experimental)\n0. Sair\n\n'
+        read -r -p 'Escolha: ' selection
+        case "$selection" in
+            1) tool_name=codex ;;
+            2) tool_name=copilot ;;
+            3) tool_name=claude ;;
+            4) tool_name=ubuntu ;;
+            5) tool_name=agy ;;
+            0) exit 0 ;;
+            *) exit 2 ;;
+        esac
+    elif [[ "$1" == --help ]]; then
+        printf '%s\n' 'Uso: ia {codex|copilot|claude|antigravity|agy|ubuntu} [argumentos]'
+        exit 0
+    else
+        tool_name="$1"
+        shift
+    fi
+else
+    tool_name="$launcher_name"
+fi
+case "$tool_name" in
+    codex|copilot|claude) ;;
+    antigravity|agy) tool_name=agy ;;
+    ubuntu|terminal) tool_name=bash; set -- -l "$@" ;;
+    *) exit 2 ;;
+esac
+if [[ ${TERMUX_AI_GUEST:-} == 1 ]]; then exit 1; fi
+exec proot-distro login ubuntu --work-dir "$PWD" -- /bin/bash -lc 'export TERMUX_AI_GUEST=1; exec "$@"' termux-ai "$tool_name" "$@"
+LEGACY
+cp "$PREFIX/bin/ia" "$test_root/ubuntu-launcher.before"
+printf 'original opencode command\n' > "$PREFIX/bin/opencode"
+if bash "$project_root/scripts/add-opencode-ubuntu.sh" --yes > "$test_root/ubuntu-conflict.log" 2>&1; then
+    printf '%s\n' 'FAIL Ubuntu addition overwrote an existing OpenCode command' >&2
+    exit 1
+fi
+assert_equal "$(< "$PREFIX/bin/opencode")" 'original opencode command' 'preserves existing OpenCode command'
+cmp "$PREFIX/bin/ia" "$test_root/ubuntu-launcher.before"
+rm "$PREFIX/bin/opencode"
+printf '%s\n' 'PASS Ubuntu addition preserves conflicting commands'
+
+if TERMUX_AI_TEST_GUEST_FAILURE=3 bash "$project_root/scripts/add-opencode-ubuntu.sh" --yes > "$test_root/ubuntu-install-failure.log" 2>&1; then
+    printf '%s\n' 'FAIL Ubuntu addition ignored installation failure' >&2
+    exit 1
+fi
+cmp "$PREFIX/bin/ia" "$test_root/ubuntu-launcher.before"
+test ! -e "$PREFIX/bin/opencode"
+printf '%s\n' 'PASS Ubuntu installation failure leaves the menu unchanged'
+
+bash "$project_root/scripts/add-opencode-ubuntu.sh" --yes > "$test_root/ubuntu-opencode.log"
+test -x "$PREFIX/bin/opencode"
+cmp "$PREFIX/bin/opencode" "$PREFIX/bin/ia"
+cmp "$HOME"/.cache/termux-ai-opencode.*/ia "$test_root/ubuntu-launcher.before"
+grep -Fq '\n6. OpenCode (experimental)\n0. Sair' "$PREFIX/bin/ia"
+grep -Fq '1) tool_name=codex ;;' "$PREFIX/bin/ia"
+grep -Fq '2) tool_name=copilot ;;' "$PREFIX/bin/ia"
+grep -Fq '5) tool_name=agy ;;' "$PREFIX/bin/ia"
+grep -Fq '6) tool_name=opencode ;;' "$PREFIX/bin/ia"
+printf '6\n' | bash "$PREFIX/bin/ia" > "$test_root/ubuntu-menu.log"
+grep -Fq '6. OpenCode (experimental)' "$test_root/ubuntu-menu.log"
+grep -q 'proot login ubuntu .*termux-ai opencode$' "$TERMUX_AI_TEST_INSTALL_LOG"
+cp "$PREFIX/bin/ia" "$test_root/ubuntu-launcher.after"
+bash "$project_root/scripts/add-opencode-ubuntu.sh" --yes > "$test_root/ubuntu-opencode-rerun.log"
+grep -q 'ja esta integrado' "$test_root/ubuntu-opencode-rerun.log"
+cmp "$PREFIX/bin/ia" "$test_root/ubuntu-launcher.after"
+printf '%s\n' 'PASS Ubuntu menu option 6, backup and repeat installation'
+
+rm "$PREFIX/bin/opencode"
+printf 'unknown_menu_format=true\n' > "$PREFIX/bin/ia"
+cp "$PREFIX/bin/ia" "$test_root/unknown-launcher.before"
+if bash "$project_root/scripts/add-opencode-ubuntu.sh" --yes > "$test_root/unknown-menu.log" 2>&1; then
+    printf '%s\n' 'FAIL unknown Ubuntu menu was changed' >&2
+    exit 1
+fi
+cmp "$PREFIX/bin/ia" "$test_root/unknown-launcher.before"
+test ! -e "$PREFIX/bin/opencode"
+sed 's/5) tool_name=agy/5) tool_name=custom/' "$test_root/ubuntu-launcher.before" > "$PREFIX/bin/ia"
+cp "$PREFIX/bin/ia" "$test_root/custom-menu.before"
+if bash "$project_root/scripts/add-opencode-ubuntu.sh" --yes > "$test_root/custom-menu.log" 2>&1; then
+    printf '%s\n' 'FAIL customized Ubuntu menu was changed' >&2
+    exit 1
+fi
+grep -q 'Formato de menu nao reconhecido' "$test_root/custom-menu.log"
+cmp "$PREFIX/bin/ia" "$test_root/custom-menu.before"
+test ! -e "$PREFIX/bin/opencode"
+printf '%s\n' 'PASS unrecognized Ubuntu menu is preserved'
+
+for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/add-opencode-ubuntu.sh tests/run.sh; do
     bash -n "$project_root/$relative_path"
     if LC_ALL=C grep -q $'\r' "$project_root/$relative_path"; then
         printf 'FAIL: CRLF in %s\n' "$relative_path" >&2

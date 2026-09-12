@@ -18,6 +18,6 @@ jobs:
       - name: Install ShellCheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Check shell scripts
-        run: shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash tests/run.sh
+        run: shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/add-opencode-ubuntu.sh scripts/menu.bash tests/run.sh
       - name: Run offline tests
         run: bash tests/run.sh

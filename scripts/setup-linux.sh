@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+install_opencode() {
+    node -e 'if (Number(process.versions.node.split(".")[0]) < 22) process.exit(1)'
+    npm install -g --prefix "$HOME/.local" --ignore-scripts opencode-ai@1.18.30
+    node "$HOME/.local/lib/node_modules/opencode-ai/postinstall.mjs"
+    timeout 60s "$HOME/.local/bin/opencode" --version
+}
+
 case "${1:-}" in
     system)
         [[ $(id -u) == 0 ]] || { printf '%s\n' 'Esta etapa exige o root simulado do PRoot.' >&2; exit 1; }
@@ -15,6 +22,7 @@ case "${1:-}" in
         node -e 'if (Number(process.versions.node.split(".")[0]) < 22) process.exit(1)'
         mkdir -p "$HOME/.local/bin"
         npm install -g --prefix "$HOME/.local" @openai/codex@0.154.0 @github/copilot@1.0.83
+        install_opencode
         installer_dir="$(mktemp -d)"
         trap 'rm -rf -- "$installer_dir"' EXIT
         curl --fail --show-error --location --proto '=https' --tlsv1.2 \
@@ -77,9 +85,15 @@ NODE
             fi
             printf '\n%s\n' "$profile_entry" >> "$HOME/.profile"
         fi
-        for tool_name in codex copilot claude agy; do
+        for tool_name in codex copilot claude agy opencode; do
             timeout 60s "$HOME/.local/bin/$tool_name" --version
         done
+        ;;
+    opencode)
+        umask 077
+        export PATH="$HOME/.local/bin:$PATH"
+        mkdir -p "$HOME/.local/bin"
+        install_opencode
         ;;
     *) printf '%s\n' 'Etapa interna desconhecida. Use install.sh no Termux.' >&2; exit 2 ;;
 esac
