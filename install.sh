@@ -65,7 +65,7 @@ if (( enable_menu )) && [[ -e "$HOME/.bashrc" || -L "$HOME/.bashrc" ]]; then
     [[ -f "$HOME/.bashrc" && ! -L "$HOME/.bashrc" ]] || fail 'A configuracao Bash nao e um arquivo comum; use --no-menu.'
     bash -n "$HOME/.bashrc" || fail 'Corrija a sintaxe da configuracao Bash ou use --no-menu.'
 fi
-for relative_path in bin/ia scripts/setup-linux.sh scripts/menu.bash; do
+for relative_path in bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/handoff.sh; do
     [[ -f "$project_root/$relative_path" ]] || fail 'Baixe o repositorio completo antes de executar install.sh.'
     if LC_ALL=C grep -q $'\r' "$project_root/$relative_path"; then
         fail "O arquivo $relative_path precisa de finais de linha LF."
@@ -109,6 +109,7 @@ if [[ ! -e "$container_dir" && ! -e "$legacy_dir" ]]; then
 fi
 proot-distro login termux-ai -- /bin/bash -se -- system < "$project_root/scripts/setup-linux.sh"
 proot-distro login termux-ai --user node -- /bin/bash -se -- agents < "$project_root/scripts/setup-linux.sh"
+proot-distro login termux-ai --user node -- /bin/bash -c 'set -e; umask 077; mkdir -p "$HOME/.local/bin"; cat > "$HOME/.local/bin/ia-handoff.next"; chmod 755 "$HOME/.local/bin/ia-handoff.next"; mv -f "$HOME/.local/bin/ia-handoff.next" "$HOME/.local/bin/ia-handoff"' < "$project_root/scripts/handoff.sh"
 
 {
     printf '#!%s/bin/bash\n' "$PREFIX"
@@ -137,4 +138,5 @@ printf '\n%s\n' \
     'Instalacao concluida; os comandos de versao dos cinco agentes passaram.' \
     'Abra uma nova sessao Bash ou execute ia. Use 0 no menu para chegar ao shell.' \
     'Faltam seus logins e os testes com modelos. Nenhuma credencial foi solicitada.' \
+    'Handoff entre aparelhos (experimental): ia handoff e ia continuar. So envia para repositorio privado.' \
     'O sandbox do Codex nao foi desativado. Nenhuma conexao SSH/ADB foi criada.'

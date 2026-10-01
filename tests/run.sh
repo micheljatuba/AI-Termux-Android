@@ -6,6 +6,7 @@ test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
 mkdir -p "$test_root/bin" "$test_root/project with spaces"
 export TERMUX_AI_TEST_ARGS="$test_root/arguments"
+clean_path="$PATH"
 export PATH="$test_root/bin:$PATH"
 unset TERMUX_AI_GUEST
 
@@ -77,6 +78,31 @@ assert_equal "${actual_args[11]}" /bin/bash 'opens the Linux terminal'
 assert_equal "${actual_args[12]}" -l 'loads the terminal profile'
 assert_equal "${actual_args[14]}" 'printf terminal-ok' 'preserves terminal command'
 printf '%s\n' 'PASS terminal dispatch'
+
+bash "$project_root/bin/ia" handoff --dry-run --note 'two words'
+mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+assert_equal "${actual_args[11]}" ia-handoff 'routes handoff to the guest script'
+assert_equal "${actual_args[12]}" handoff 'passes the handoff command'
+assert_equal "${actual_args[13]}" --dry-run 'preserves handoff flags'
+assert_equal "${actual_args[14]}" --note 'preserves the note flag'
+assert_equal "${actual_args[15]}" 'two words' 'preserves the note text'
+for continue_name in continuar continue; do
+    bash "$project_root/bin/ia" "$continue_name" --latest
+    mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+    assert_equal "${actual_args[11]}" ia-handoff 'routes continue to the guest script'
+    assert_equal "${actual_args[12]}" continue 'normalizes the continue command'
+    assert_equal "${actual_args[13]}" --latest 'preserves continue flags'
+done
+printf '%s\n' 'PASS handoff dispatch'
+
+mkdir -p "$test_root/empty-home"
+guest_script="${actual_args[9]}"
+guest_status=0
+guest_log="$(HOME="$test_root/empty-home" bash -c "$guest_script" termux-ai ia-handoff-missing 2>&1)" || guest_status=$?
+assert_equal "$guest_status" 127 'a missing guest command fails with 127'
+grep -q 'bash install.sh' <<< "$guest_log"
+HOME="$test_root/empty-home" bash -c "$guest_script" termux-ai true
+printf '%s\n' 'PASS missing guest command explains how to update'
 
 for tool_name in claude antigravity agy opencode; do
     if TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" "$tool_name" > "$test_root/nested.log" 2>&1; then
@@ -212,6 +238,11 @@ for tool_name in ia codex copilot claude antigravity agy opencode; do
     cmp "$PREFIX/bin/$tool_name" "$state_dir/bin/ia"
 done
 assert_equal "$(head -n 1 "$PREFIX/bin/ia")" "#!$PREFIX/bin/bash" 'uses the actual Termux prefix'
+grep -q 'proot login termux-ai --user node -- /bin/bash -c .*ia-handoff' "$TERMUX_AI_TEST_INSTALL_LOG"
+if grep -q 'ia-handoff' <(ls "$PREFIX/bin"); then
+    printf '%s\n' 'FAIL ia-handoff must live only inside the Linux guest' >&2
+    exit 1
+fi
 printf '%s\n' 'PASS mock installation, managed rerun and preserved configuration'
 
 cp "$HOME/.bashrc" "$test_root/bashrc.installed"
@@ -495,7 +526,9 @@ cmp "$PREFIX/bin/ia" "$test_root/custom-menu.before"
 test ! -e "$PREFIX/bin/opencode"
 printf '%s\n' 'PASS unrecognized Ubuntu menu is preserved'
 
-for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/add-opencode-ubuntu.sh tests/run.sh; do
+env -i PATH="$clean_path" bash "$project_root/tests/handoff.sh"
+
+for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/add-opencode-ubuntu.sh scripts/handoff.sh tests/run.sh tests/handoff.sh; do
     bash -n "$project_root/$relative_path"
     if LC_ALL=C grep -q $'\r' "$project_root/$relative_path"; then
         printf 'FAIL: CRLF in %s\n' "$relative_path" >&2

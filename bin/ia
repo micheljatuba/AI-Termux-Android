@@ -5,6 +5,7 @@ show_help() {
     printf '%s\n' \
     'Uso: ia [copilot|claude|codex|antigravity|agy|opencode|terminal] [argumentos]' \
         'Sem argumentos, abre o menu em uma sessao interativa.' \
+    'Handoff (experimental): ia handoff envia o trabalho para um branch privado; ia continuar o retoma em outro aparelho.' \
     'Codex: execucao no sandbox nao validada para Android/PRoot.' \
     'Antigravity CLI: comandos antigravity ou agy.' \
     'OpenCode: integracao experimental, sem validacao em Android/PRoot.'
@@ -45,6 +46,14 @@ fi
 case "$tool_name" in
     codex|copilot|claude|opencode) ;;
     antigravity|agy) tool_name=agy ;;
+    handoff)
+        set -- handoff "$@"
+        tool_name=ia-handoff
+        ;;
+    continuar|continue)
+        set -- continue "$@"
+        tool_name=ia-handoff
+        ;;
     terminal|linux)
         tool_name=/bin/bash
         set -- -l "$@"
@@ -63,5 +72,5 @@ if ! command -v proot-distro >/dev/null 2>&1; then
 fi
 
 exec proot-distro login termux-ai --user node --work-dir "$PWD" -- \
-    /bin/bash -lc 'export TERMUX_AI_GUEST=1; export PATH="$HOME/.local/bin:$PATH"; exec "$@"' \
+    /bin/bash -lc 'export TERMUX_AI_GUEST=1; export PATH="$HOME/.local/bin:$PATH"; command -v "$1" >/dev/null 2>&1 || { printf "%s\n" "Comando $1 nao encontrado no Linux. Execute no Termux (fora do Linux): cd ~/AI-Termux-Android && git pull --ff-only && bash install.sh" >&2; exit 127; }; exec "$@"' \
     termux-ai "$tool_name" "$@"
