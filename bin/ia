@@ -1,13 +1,210 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+state_dir="$HOME/.local/share/termux-ai"
+version_pattern='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+
 show_help() {
     printf '%s\n' \
-    'Uso: ia [copilot|claude|codex|antigravity|agy|opencode|terminal] [argumentos]' \
+        'Uso: ia [copilot|claude|codex|antigravity|agy|opencode|terminal] [argumentos]' \
+        '     ia versoes' \
+        '     ia atualizar [--yes] [agente...]' \
         'Sem argumentos, abre o menu em uma sessao interativa.' \
-    'Codex: execucao no sandbox nao validada para Android/PRoot.' \
-    'Antigravity CLI: comandos antigravity ou agy.' \
-    'OpenCode: integracao experimental, sem validacao em Android/PRoot.'
+        'versoes: compara as versoes instaladas com as mais recentes.' \
+        'atualizar: mostra o plano e atualiza os agentes apos confirmacao.' \
+        'Codex: execucao no sandbox nao validada para Android/PRoot.' \
+        'Antigravity CLI: comandos antigravity ou agy.' \
+        'OpenCode: integracao experimental, sem validacao em Android/PRoot.'
+}
+
+display_name() {
+    case "$1" in
+        copilot) printf '%s' 'GitHub Copilot' ;;
+        claude) printf '%s' 'Claude Code' ;;
+        codex) printf '%s' 'Codex' ;;
+        agy) printf '%s' 'Antigravity CLI' ;;
+        opencode) printf '%s' 'OpenCode' ;;
+    esac
+}
+
+require_proot_distro() {
+    if ! command -v proot-distro >/dev/null 2>&1; then
+        printf '%s\n' 'PRoot-Distro nao encontrado. Execute bash install.sh pelo Termux.' >&2
+        exit 1
+    fi
+}
+
+# linux.conf e lido como dados, nunca executado.
+load_linux_config() {
+    local config_key config_value
+    linux_name=termux-ai
+    linux_user=node
+    if [[ -f "$state_dir/linux.conf" ]]; then
+        while IFS='=' read -r config_key config_value || [[ -n $config_key ]]; do
+            case "$config_key" in
+                name) linux_name="$config_value" ;;
+                user) linux_user="$config_value" ;;
+            esac
+        done < "$state_dir/linux.conf"
+    fi
+    if [[ ! $linux_name =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ || ! $linux_user =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+        printf 'Configuracao invalida em %s/linux.conf.\n' "$state_dir" >&2
+        exit 1
+    fi
+    login_args=(login "$linux_name")
+    if [[ $linux_user != root ]]; then
+        login_args+=(--user "$linux_user")
+    fi
+}
+
+prepare_maintenance() {
+    if [[ ${TERMUX_AI_GUEST:-} == 1 ]]; then
+        printf '%s\n' 'Use ia versoes e ia atualizar no Termux, fora do Linux.' >&2
+        exit 1
+    fi
+    require_proot_distro
+    load_linux_config
+}
+
+run_linux_stage() {
+    if [[ ! -f "$state_dir/setup-linux.sh" ]]; then
+        printf '%s\n' 'Componentes de atualizacao ausentes. Execute novamente bash install.sh pelo Termux.' >&2
+        return 1
+    fi
+    PROOT_VERBOSE=-1 proot-distro "${login_args[@]}" -- /bin/bash -se -- "$@" < "$state_dir/setup-linux.sh"
+}
+
+read_versions() {
+    local output marker tool installed latest status
+    version_rows=()
+    printf 'Consultando as versoes no Linux %s...\n' "$linux_name"
+    if ! output="$(run_linux_stage versions)"; then
+        printf '%s\n' 'Nao foi possivel consultar as versoes no Linux.' >&2
+        return 1
+    fi
+    while IFS=$'\t' read -r marker tool installed latest status; do
+        [[ $marker == @version ]] || continue
+        case "$tool" in
+            copilot|claude|codex|agy|opencode) ;;
+            *) continue ;;
+        esac
+        [[ $installed == - || $installed =~ $version_pattern ]] || continue
+        [[ $latest == - || $latest =~ $version_pattern ]] || continue
+        case "$status" in
+            current|outdated|missing|unknown) version_rows+=("$tool $installed $latest $status") ;;
+        esac
+    done <<< "$output"
+    if (( ${#version_rows[@]} == 0 )); then
+        printf '%s\n' 'Nao foi possivel consultar as versoes no Linux.' >&2
+        return 1
+    fi
+}
+
+status_label() {
+    case "$1" in
+        current) printf '%s' 'atualizado' ;;
+        outdated) printf '%s' 'atualizacao disponivel' ;;
+        missing) printf '%s' 'nao instalado' ;;
+        unknown) printf '%s' 'sem consulta' ;;
+    esac
+}
+
+print_version_table() {
+    local row tool installed latest status
+    printf '\n%-16s %-12s %-12s %s\n' 'Agente' 'Instalada' 'Disponivel' 'Situacao'
+    for row in "${version_rows[@]}"; do
+        read -r tool installed latest status <<< "$row"
+        printf '%-16s %-12s %-12s %s\n' "$(display_name "$tool")" "$installed" "$latest" "$(status_label "$status")"
+    done
+}
+
+can_update() {
+    [[ $3 != - && ( $4 == outdated || $4 == missing ) ]]
+}
+
+show_versions() {
+    local row tool installed latest status
+    if (( $# > 0 )); then
+        show_help >&2
+        return 2
+    fi
+    read_versions || return 1
+    print_version_table
+    for row in "${version_rows[@]}"; do
+        read -r tool installed latest status <<< "$row"
+        if can_update "$tool" "$installed" "$latest" "$status"; then
+            printf '\n%s\n' 'Para atualizar: ia atualizar'
+            break
+        fi
+    done
+}
+
+update_agents() {
+    local assume_yes=0 argument row tool installed latest status answer failed_list=''
+    local -a selected=() plan=()
+    for argument in "$@"; do
+        case "$argument" in
+            --yes|-y) assume_yes=1 ;;
+            copilot|claude|codex|opencode) selected+=("$argument") ;;
+            antigravity|agy) selected+=(agy) ;;
+            *)
+                printf 'Agente desconhecido: %s\n' "$argument" >&2
+                show_help >&2
+                return 2
+                ;;
+        esac
+    done
+    read_versions || return 1
+    print_version_table
+    for row in "${version_rows[@]}"; do
+        read -r tool installed latest status <<< "$row"
+        if (( ${#selected[@]} > 0 )) && [[ " ${selected[*]} " != *" $tool "* ]]; then
+            continue
+        fi
+        if can_update "$tool" "$installed" "$latest" "$status"; then
+            plan+=("$row")
+        fi
+    done
+    if (( ${#plan[@]} == 0 )); then
+        printf '\n%s\n' 'Nenhuma atualizacao disponivel para os agentes selecionados.'
+        return 0
+    fi
+    printf '\n%s\n' 'Atualizacoes planejadas:'
+    for row in "${plan[@]}"; do
+        read -r tool installed latest status <<< "$row"
+        printf '  %-16s %s -> %s\n' "$(display_name "$tool")" "$installed" "$latest"
+    done
+    printf '%s\n' 'Feche os agentes abertos antes de continuar.'
+    if (( ! assume_yes )); then
+        if [[ ! -t 0 ]]; then
+            printf '%s\n' 'Sem entrada interativa. Revise o plano e use ia atualizar --yes para confirmar.' >&2
+            return 1
+        fi
+        read -r -p 'Atualizar agora? [s/N] ' answer || answer=''
+        case "$answer" in
+            s|S|sim|SIM|y|Y|yes) ;;
+            *) printf '%s\n' 'Atualizacao cancelada.'; return 0 ;;
+        esac
+    fi
+    for row in "${plan[@]}"; do
+        read -r tool installed latest status <<< "$row"
+        printf '\n== %s %s ==\n' "$(display_name "$tool")" "$latest"
+        if ! run_linux_stage update "$tool" "$latest"; then
+            failed_list+="${failed_list:+, }$(display_name "$tool")"
+        fi
+    done
+    if [[ -n $failed_list ]]; then
+        printf '\nFalha ao atualizar: %s. Revise as mensagens acima e tente novamente.\n' "$failed_list" >&2
+        return 1
+    fi
+    printf '\n%s\n' 'Atualizacao concluida.'
+}
+
+run_maintenance() {
+    local status=0
+    prepare_maintenance
+    "$@" || status=$?
+    return "$status"
 }
 
 launcher_name="${0##*/}"
@@ -17,23 +214,38 @@ if [[ "$launcher_name" == ia ]]; then
             show_help
             exit 0
         fi
-        printf '\nTermux AI\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (experimental)\n4. Terminal Linux\n5. Google Antigravity CLI\n6. OpenCode (experimental)\n0. Sair\n\n'
-        if ! read -r -p 'Escolha: ' selection; then
-            exit 0
-        fi
-        case "$selection" in
-            1) tool_name=copilot ;;
-            2) tool_name=claude ;;
-            3) tool_name=codex ;;
-            4) tool_name=terminal ;;
-            5) tool_name=agy ;;
-            6) tool_name=opencode ;;
-            0) exit 0 ;;
-            *) printf '%s\n' 'Opcao invalida.' >&2; exit 2 ;;
-        esac
+        while true; do
+            printf '\nTermux AI\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (experimental)\n4. Terminal Linux\n5. Google Antigravity CLI\n6. OpenCode (experimental)\n7. Ver versoes dos agentes\n8. Atualizar agentes\n0. Sair\n\n'
+            if ! read -r -p 'Escolha: ' selection; then
+                exit 0
+            fi
+            case "$selection" in
+                1) tool_name=copilot ;;
+                2) tool_name=claude ;;
+                3) tool_name=codex ;;
+                4) tool_name=terminal ;;
+                5) tool_name=agy ;;
+                6) tool_name=opencode ;;
+                7) run_maintenance show_versions || true; continue ;;
+                8) run_maintenance update_agents || true; continue ;;
+                0) exit 0 ;;
+                *) printf '%s\n' 'Opcao invalida.' >&2; exit 2 ;;
+            esac
+            break
+        done
     elif [[ "$1" == --help || "$1" == -h ]]; then
         show_help
         exit 0
+    elif [[ "$1" == versoes ]]; then
+        shift
+        status=0
+        run_maintenance show_versions "$@" || status=$?
+        exit "$status"
+    elif [[ "$1" == atualizar ]]; then
+        shift
+        status=0
+        run_maintenance update_agents "$@" || status=$?
+        exit "$status"
     else
         tool_name="$1"
         shift
@@ -45,7 +257,7 @@ fi
 case "$tool_name" in
     codex|copilot|claude|opencode) ;;
     antigravity|agy) tool_name=agy ;;
-    terminal|linux)
+    terminal|linux|ubuntu)
         tool_name=/bin/bash
         set -- -l "$@"
         ;;
@@ -57,11 +269,9 @@ if [[ ${TERMUX_AI_GUEST:-} == 1 ]]; then
     exit 1
 fi
 
-if ! command -v proot-distro >/dev/null 2>&1; then
-    printf '%s\n' 'PRoot-Distro nao encontrado. Execute bash install.sh pelo Termux.' >&2
-    exit 1
-fi
+require_proot_distro
+load_linux_config
 
-exec proot-distro login termux-ai --user node --work-dir "$PWD" -- \
+exec proot-distro "${login_args[@]}" --work-dir "$PWD" -- \
     /bin/bash -lc 'export TERMUX_AI_GUEST=1; export PATH="$HOME/.local/bin:$PATH"; exec "$@"' \
     termux-ai "$tool_name" "$@"

@@ -96,7 +96,8 @@ ia
 ```
 
 O menu tambem aparece em novas sessoes **Bash** do Termux. Escolha o numero do
-agente e pressione Enter. Use `0` para voltar ao shell.
+agente e pressione Enter. As opcoes `7` e `8` consultam e atualizam as versoes
+dos agentes. Use `0` para voltar ao shell.
 
 <details>
 <summary>Opcoes de instalacao</summary>
@@ -106,6 +107,7 @@ agente e pressione Enter. Use `0` para voltar ao shell.
 | `bash install.sh --check` | Verifica o ambiente sem instalar nem modificar arquivos |
 | `bash install.sh --no-menu` | Instala os comandos sem abrir o menu automaticamente |
 | `bash install.sh --yes` | Confirma a instalacao sem pergunta interativa |
+| `bash install.sh --adopt-ubuntu` | Integra um Ubuntu e um menu `ia` manuais; veja [Instalacoes existentes](#instalacoes-existentes) |
 
 `--yes` nao autoriza acoes futuras dos agentes. Para desativar um menu automatico
 ja gerenciado por este projeto, execute novamente com `--no-menu`.
@@ -217,12 +219,13 @@ atualizacoes dos fornecedores.</sub>
 &rarr; **CLI escolhida** &rarr; **Provedor de IA**
 
 1. **Verifica o ambiente:** Android, arquitetura, espaco livre e conflitos com comandos existentes.
-2. **Prepara o Linux:** instala o PRoot oficial e cria o ambiente `termux-ai`, usando Debian com Node.js 24.
-3. **Instala as CLIs oficiais:** verifica os executaveis, sem pedir logins nem chamar modelos.
+2. **Prepara o Linux:** instala o PRoot oficial e cria o ambiente `termux-ai`, usando Debian com Node.js 24, ou reaproveita um Ubuntu existente com `--adopt-ubuntu`.
+3. **Instala as CLIs oficiais:** instala as ausentes ou abaixo da versao validada, nunca rebaixa as mais novas e verifica os executaveis, sem pedir logins nem chamar modelos.
 4. **Cria os atalhos:** adiciona `ia` e os comandos dos agentes, com menu automatico opcional.
 
 O ambiente inclui **Git, GitHub CLI, ripgrep, nano e Node.js**. Os agentes rodam
-como o usuario Linux `node`, sem root real no Android. A imagem base e
+como o usuario Linux `node` (no Ubuntu adotado, como o root simulado do PRoot),
+sem root real no Android. A imagem base e
 `node:24-bookworm-slim`; nao e necessario instalar ou executar Docker.
 
 Isso nao transforma Android em Windows. PRoot fornece um ambiente Linux sobre
@@ -230,7 +233,30 @@ o kernel do Android, com limitacoes de compatibilidade e isolamento.
 
 ## Atualizar
 
-Saia dos agentes antes de atualizar uma instalacao **gerenciada por este projeto**:
+**Consulte e atualize os agentes pelo Termux:**
+
+```sh
+ia versoes
+ia atualizar
+```
+
+`ia versoes` compara a versao instalada de cada agente com a mais recente
+publicada no npm e no manifesto oficial do Antigravity. `ia atualizar` mostra
+o plano, pede confirmacao e verifica cada agente com `--version` depois da
+instalacao. As opcoes `7` e `8` do menu fazem o mesmo.
+
+| Comando | O que faz |
+| --- | --- |
+| `ia versoes` | Mostra a versao instalada, a disponivel e a situacao dos cinco agentes |
+| `ia atualizar` | Atualiza os agentes desatualizados apos confirmacao |
+| `ia atualizar claude codex` | Limita a atualizacao aos agentes informados |
+| `ia atualizar --yes` | Confirma o plano sem pergunta interativa |
+
+Feche os agentes antes de atualizar. Cada atualizacao reaproveita o local em
+que o agente ja esta instalado: prefixo npm, instalador nativo do Claude Code
+ou binario do Antigravity. Contas e conversas sao mantidas.
+
+Para atualizar o menu e os scripts deste projeto, saia dos agentes e execute:
 
 ```sh
 cd ~/AI-Termux-Android
@@ -238,22 +264,19 @@ git pull --ff-only
 bash install.sh
 ```
 
-O Linux dedicado e seus dados sao reaproveitados. Use `--no-menu` novamente se
-nao deseja o menu automatico. Comandos personalizados nao sao sobrescritos.
+O Linux e seus dados sao reaproveitados. Use `--no-menu` novamente se nao
+deseja o menu automatico. Comandos personalizados nao sao sobrescritos.
 
 <details>
-<summary>Atualizar apenas as CLIs e consultar versoes</summary>
+<summary>Versoes validadas e verificacoes</summary>
 
-```sh
-ia terminal
-npm install -g --prefix "$HOME/.local" @openai/codex @github/copilot
-claude update
-agy update
-opencode upgrade
-exit
-```
+O instalador garante pelo menos Codex 0.159.3, Copilot 1.0.90, Claude Code
+2.1.286 e OpenCode 1.18.34, versoes validadas no Android. **Versoes iguais ou
+mais novas sao mantidas: reexecutar o instalador nunca rebaixa um agente.**
+Antigravity segue seu manifesto oficial. Atualizacoes dos fornecedores podem
+mudar a compatibilidade.
 
-Para conferir as versoes pelo Termux:
+Para conferir as versoes diretamente pelo Termux:
 
 ```sh
 copilot --version
@@ -263,26 +286,90 @@ antigravity --version
 opencode --version
 ```
 
-O instalador parte de Codex 0.154.0, Copilot 1.0.83, Claude Code 2.1.269 e
-OpenCode 1.18.30. Antigravity segue seu manifesto oficial. Reexecutar o instalador
-pode retornar os pacotes npm para as versoes iniciais; atualizacoes dos fornecedores
-podem mudar a compatibilidade.
-
 No OpenCode, o instalador executa explicitamente apenas o pos-instalador oficial,
 sem liberar scripts globalmente no npm. O download do Antigravity verifica o
-dominio do pacote e o SHA-512 antes de instalar o binario. O configurador de
-aliases e perfis do Antigravity nao e executado.
+dominio do pacote, a versao anunciada e o SHA-512 antes de instalar o binario.
+O configurador de aliases e perfis do Antigravity nao e executado.
 
 </details>
 
 ## Instalacoes existentes
 
-**Ja usa Ubuntu e um menu manual no Android? Nao execute o instalador completo
-por cima dessa configuracao.** O complemento abaixo acrescenta apenas o OpenCode
-a um menu compativel, sem migrar contas nem reinstalar os outros agentes.
-
-Clone este repositorio, caso ainda nao o tenha, usando o comando da
+**Ja usa Ubuntu e um menu `ia` manual no Android?** A adocao passa os comandos
+para o menu gerenciado e reaproveita o Ubuntu, sem reinstalar o Linux nem pedir
+novos logins. Clone este repositorio, caso ainda nao o tenha, usando o comando da
 [instalacao](#instalacao). Depois, no Termux e **fora do Ubuntu**:
+
+```sh
+cd ~/AI-Termux-Android
+git pull --ff-only
+bash install.sh --adopt-ubuntu --check
+bash install.sh --adopt-ubuntu
+```
+
+- Usa o Ubuntu do PRoot-Distro com o usuario root ja configurado. Contas,
+  projetos e agentes em versao igual ou mais nova que a validada sao mantidos.
+- Instala Git, GitHub CLI, ripgrep e nano, se faltarem, e os agentes ausentes
+  ou abaixo da versao validada. O Ubuntu precisa de Node.js 22 ou superior.
+- Substitui `ia` e os comandos dos agentes pelo menu gerenciado. Os anteriores
+  ficam em `~/.local/share/termux-ai/adopted/bin`.
+- Remove do `~/.bashrc` somente o bloco exato que abria o menu manual e
+  acrescenta a linha do menu gerenciado. A copia anterior fica em
+  `~/.local/share/termux-ai/bashrc.before`.
+
+A adocao reconhece o menu manual que termina em
+`exec proot-distro login ubuntu --work-dir "$PWD"`, links para ele e copias
+identicas. Com outro formato ou comandos de outra origem, ela para sem alterar
+nada. Depois da adocao, `bash install.sh` atualiza o menu e `ia atualizar`
+atualiza os agentes.
+
+<details>
+<summary>Desfazer a adocao</summary>
+
+Feche os agentes e execute no Termux para voltar ao menu manual. Somente os
+comandos identicos ao menu gerenciado sao trocados pelas copias de seguranca.
+O `~/.bashrc` volta a versao anterior a adocao; o atual fica em
+`~/.bashrc.termux-ai-undo`, caso voce o tenha alterado depois.
+
+```sh
+s=~/.local/share/termux-ai
+if grep -qx 'name=ubuntu' "$s/linux.conf" 2>/dev/null; then
+    ok=1
+    for t in ia codex copilot claude antigravity agy opencode; do
+        f="$PREFIX/bin/$t"
+        b="$s/adopted/bin/$t"
+        if [ -f "$s/bin/ia" ] && [ ! -L "$f" ] && cmp -s "$f" "$s/bin/ia"; then
+            rm -f "$f" || ok=0
+        fi
+        if { [ -e "$b" ] || [ -L "$b" ]; } && [ ! -e "$f" ] && [ ! -L "$f" ]; then
+            cp -P -p "$b" "$f" || ok=0
+        fi
+    done
+    if [ "$ok" = 1 ] && [ -f "$s/bashrc.before" ]; then
+        if [ -f ~/.bashrc ]; then cp -p ~/.bashrc ~/.bashrc.termux-ai-undo || ok=0; fi
+        if [ "$ok" = 1 ]; then cp "$s/bashrc.before" ~/.bashrc || ok=0; fi
+    fi
+    if [ "$ok" = 1 ]; then
+        rm -rf "$s"
+        echo 'Adocao desfeita. Abra uma nova sessao do Termux.'
+    else
+        echo "Falha ao desfazer. As copias continuam em $s/adopted/bin."
+    fi
+else
+    echo 'Nenhuma adocao do Ubuntu encontrada; nada foi alterado.'
+fi
+```
+
+Repetir os comandos nao altera mais nada. Tambem e seguro executa-los apos uma
+adocao interrompida: o menu manual e mantido. O Ubuntu, as contas e os agentes
+atualizados continuam como estao.
+
+</details>
+
+<details>
+<summary>Acrescentar apenas o OpenCode ao menu manual</summary>
+
+Para manter o menu manual e acrescentar somente o OpenCode, sem adotar o Ubuntu:
 
 ```sh
 cd ~/AI-Termux-Android
@@ -296,6 +383,8 @@ OpenCode na opcao 6. Preserva as opcoes anteriores e salva uma copia do menu
 em `~/.cache/termux-ai-opencode.*`. Se o formato for desconhecido ou existir
 um comando `opencode` de outra origem, ele para sem substituir o menu.
 Nao e uma migracao generica de qualquer instalacao Ubuntu.
+
+</details>
 
 ## Compatibilidade
 
@@ -315,7 +404,7 @@ Autenticar nao garante que toda ferramenta ou sandbox funcione no PRoot.
 - **Antigravity:** o login Linux pode depender de Secret Service/D-Bus; persistencia de credenciais nao e garantida em todas as configuracoes PRoot.
 - **Arquitetura:** um processador de 64 bits com Termux de 32 bits nao atende aos requisitos.
 - **Repositorios:** se a sua variante nao oferece PRoot-Distro 5.3.0+, nao misture repositorios para forcar a instalacao.
-- **Conflitos:** comandos dos agentes de outra origem exigem migracao explicita.
+- **Conflitos:** comandos dos agentes de outra origem nao sao substituidos. Para o menu Ubuntu manual, use a [adocao](#instalacoes-existentes).
 - **Interrupcao:** se a execucao anterior ja terminou, volte a `~/AI-Termux-Android` e execute `bash install.sh` novamente. O ambiente gerenciado e reaproveitado. Se houver aviso de `install.lock`, confirme que nao existe outra instalacao ativa antes de agir; nao apague o Linux como tentativa de reparo.
 
 Referencias: [Termux](https://github.com/termux/termux-app#installation),
@@ -377,7 +466,8 @@ logs privados ou backups. No OpenCode, as credenciais ficam em
 O estado do instalador fica em `~/.local/share/termux-ai` no Termux. Quando havia
 um arquivo Bash anterior, sua copia e preservada em
 `~/.local/share/termux-ai/bashrc.before`. O menu usa apenas uma linha adicional
-de carregamento nesse arquivo.
+de carregamento nesse arquivo. Na adocao, os comandos anteriores ficam em
+`~/.local/share/termux-ai/adopted/bin`.
 
 Para copiar o Linux dedicado, escolha um nome de arquivo ainda inexistente:
 
@@ -385,6 +475,7 @@ Para copiar o Linux dedicado, escolha um nome de arquivo ainda inexistente:
 proot-distro backup termux-ai --output ~/termux-ai-backup.tar.gz
 ```
 
+No Ubuntu adotado, use `ubuntu` no lugar de `termux-ai`.
 Esse backup pode conter credenciais. Guarde-o em local privado. Projetos na
 home do Termux, fora do Linux dedicado, precisam de backup separado.
 Nao use `proot-distro reset` ou `remove` como reparo sem backup: eles apagam
@@ -402,7 +493,9 @@ shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/a
 ```
 
 A suite verifica argumentos, conflitos, preservacao de configuracoes,
-repeticao da instalacao, validacao de downloads e atualizacao do menu Ubuntu.
+repeticao da instalacao, validacao de downloads, consulta e atualizacao de
+versoes sem rebaixamento, adocao do Ubuntu manual e atualizacao do menu Ubuntu.
+Execute-a em Linux; no Android, rode-a dentro do Linux do PRoot com `ia terminal`.
 Antes de anunciar suporte a uma nova configuracao Android, teste instalacao,
 login e uma tarefa controlada em cada agente, sem publicar dados pessoais.
 
