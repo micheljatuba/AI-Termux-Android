@@ -89,8 +89,8 @@ installed_version() {
     local tool_path output
     tool_path="$(command -v "$1" 2> /dev/null)" || return 1
     [[ $tool_path == /* ]] || return 1
-    output="$(timeout 60s "$tool_path" --version < /dev/null 2> "$work_dir/version.err")" || return 1
-    extract_version "$output" || extract_version "$(< "$work_dir/version.err")"
+    output="$(timeout 60s "$tool_path" --version < /dev/null 2> "$work_dir/$1.version.err")" || return 1
+    extract_version "$output" || extract_version "$(< "$work_dir/$1.version.err")"
 }
 
 # Reaproveita o prefixo npm em que o agente ja esta instalado.
@@ -285,6 +285,206 @@ print_versions() {
     done
 }
 
+# Roda como nas sessoes dos agentes: shell de login, PATH local primeiro e sem entrada.
+in_agent_env() {
+    # shellcheck disable=SC2016
+    timeout 30s bash -lc 'export TERMUX_AI_GUEST=1; export PATH="$HOME/.local/bin:$PATH"; exec "$@"' termux-ai "$@" < /dev/null
+}
+
+codex_login() {
+    local output
+    if output="$(in_agent_env "$1" login status 2>&1)"; then
+        printf 'yes'
+    elif [[ $output == *'Not logged in'* ]]; then
+        printf 'no'
+    else
+        printf 'unknown'
+    fi
+}
+
+# Le somente o campo loggedIn; email e organizacao nunca sao exibidos.
+claude_login() {
+    local output pattern='"loggedIn"[[:space:]]*:[[:space:]]*(true|false)'
+    output="$(in_agent_env "$1" auth status 2> /dev/null)" || true
+    if [[ ! $output =~ $pattern ]]; then
+        printf 'unknown'
+    elif [[ ${BASH_REMATCH[1]} == true ]]; then
+        printf 'yes'
+    else
+        printf 'no'
+    fi
+}
+
+# O ambiente de login informa so se ha token e onde fica a configuracao, nunca valores.
+copilot_login() {
+    local report config content pattern='"loggedInUsers"[[:space:]]*:[[:space:]]*\[[[:space:]]*[^][:space:]]'
+    # shellcheck disable=SC2016
+    report="$(in_agent_env /bin/bash -c '
+        for name in COPILOT_GITHUB_TOKEN GH_TOKEN GITHUB_TOKEN COPILOT_PROVIDER_BASE_URL; do
+            if [[ -n ${!name:-} ]]; then
+                printf "\n%s\n" @token
+                exit 0
+            fi
+        done
+        printf "\n%s\n" "${COPILOT_HOME:-$HOME/.copilot}/config.json"
+    ' 2> /dev/null)" || {
+        printf 'unknown'
+        return 0
+    }
+    config="${report##*$'\n'}"
+    if [[ $config == @token ]]; then
+        printf 'yes'
+    elif [[ $config != /* || ! -e $config ]]; then
+        printf 'no'
+    elif ! content="$(< "$config")"; then
+        printf 'unknown'
+    elif [[ $content =~ $pattern ]]; then
+        printf 'yes'
+    else
+        printf 'no'
+    fi
+}
+
+opencode_login() {
+    local output credentials='' variables=0 pattern
+    output="$(in_agent_env "$1" auth list 2>&1 | sed 's/\x1b\[[0-9;]*m//g')" || {
+        printf 'unknown'
+        return 0
+    }
+    pattern='([0-9]+) credentials?'
+    if [[ $output =~ $pattern ]]; then
+        credentials="${BASH_REMATCH[1]}"
+    fi
+    pattern='([0-9]+) environment variables?'
+    if [[ $output =~ $pattern ]]; then
+        variables="${BASH_REMATCH[1]}"
+    fi
+    if [[ -z $credentials ]]; then
+        printf 'unknown'
+    elif (( 10#$credentials > 0 || 10#$variables > 0 )); then
+        printf 'yes'
+    else
+        printf 'no'
+    fi
+}
+
+agy_login() {
+    if [[ -s "$HOME/.gemini/antigravity-cli/antigravity-oauth-token" ]]; then
+        printf 'yes'
+    else
+        printf 'no'
+    fi
+}
+
+diagnose_agent() {
+    local tool_path version state
+    if ! tool_path="$(command -v "$1" 2> /dev/null)" || [[ $tool_path != /* ]]; then
+        printf '@diag\tagent\t%s\tmissing\t-\n' "$1"
+        return 0
+    fi
+    if ! version="$(installed_version "$1")"; then
+        printf '@diag\tagent\t%s\tbroken\t-\n' "$1"
+        return 0
+    fi
+    case "$1" in
+        codex) state="$(codex_login "$tool_path")" ;;
+        claude) state="$(claude_login "$tool_path")" ;;
+        copilot) state="$(copilot_login)" ;;
+        opencode) state="$(opencode_login "$tool_path")" ;;
+        agy) state="$(agy_login)" ;;
+    esac
+    printf '@diag\tagent\t%s\t%s\t%s\n' "$1" "$state" "$version"
+}
+
+# So conta como protecao se o sandbox iniciar e bloquear uma gravacao fora da pasta de trabalho.
+codex_isolation() {
+    local codex_path probe="$HOME/.termux-ai-sandbox-probe"
+    if ! codex_path="$(command -v codex 2> /dev/null)" || [[ $codex_path != /* ]]; then
+        printf 'missing'
+        return 0
+    fi
+    if ! (cd "$work_dir" && in_agent_env "$codex_path" sandbox -c 'sandbox_mode="read-only"' -- /bin/true) > /dev/null 2>&1; then
+        printf 'unavailable'
+        return 0
+    fi
+    rm -f -- "$probe"
+    # shellcheck disable=SC2016
+    (cd "$work_dir" && in_agent_env "$codex_path" sandbox -c 'sandbox_mode="read-only"' -- /bin/sh -c ': > "$1"' sh "$probe") \
+        > /dev/null 2>&1 || true
+    if [[ -e $probe ]]; then
+        rm -f -- "$probe"
+        printf 'ineffective'
+    else
+        printf 'active'
+    fi
+}
+
+diagnose_system() {
+    local line pretty='' version probe
+    if [[ -r /etc/os-release ]]; then
+        while IFS= read -r line || [[ -n $line ]]; do
+            if [[ $line == PRETTY_NAME=* ]]; then
+                pretty="$(printf '%s' "${line#PRETTY_NAME=}" | tr -cd 'A-Za-z0-9 ._()/+:-')"
+                break
+            fi
+        done < /etc/os-release
+    fi
+    pretty="${pretty:0:60}"
+    printf '@diag\tcheck\tdistro\tok\t%s\n' "${pretty:--}"
+    if version="$(timeout 30s node --version < /dev/null 2> /dev/null)" && version="$(extract_version "$version")"; then
+        if version_at_least "$version" 22.0.0; then
+            printf '@diag\tcheck\tnode\tok\t%s\n' "$version"
+        else
+            printf '@diag\tcheck\tnode\told\t%s\n' "$version"
+        fi
+    else
+        printf '@diag\tcheck\tnode\tmissing\t-\n'
+    fi
+    if version="$(timeout 30s git --version < /dev/null 2> /dev/null)" && version="$(extract_version "$version")"; then
+        printf '@diag\tcheck\tgit\tok\t%s\n' "$version"
+    else
+        printf '@diag\tcheck\tgit\tmissing\t-\n'
+    fi
+    # A pasta aberta pelo ia precisa aceitar gravacao dentro do Linux.
+    if [[ $1 != /* ]]; then
+        printf '@diag\tcheck\tworkdir\tskip\t-\n'
+    elif probe="$(mktemp "$1/.termux-ai-diag.XXXXXX" 2> /dev/null)"; then
+        rm -f -- "$probe"
+        printf '@diag\tcheck\tworkdir\tok\t-\n'
+    else
+        printf '@diag\tcheck\tworkdir\tfail\t-\n'
+    fi
+}
+
+diagnose_network() {
+    if curl --head --silent --output /dev/null --max-time 10 --proto '=https' https://registry.npmjs.org/ < /dev/null; then
+        printf '@diag\tcheck\tnetwork\tok\t-\n'
+    else
+        printf '@diag\tcheck\tnetwork\tfail\t-\n'
+    fi
+}
+
+# Saida para o Termux: @diag, tipo, nome, situacao e detalhe.
+print_diagnostics() {
+    local tool
+    for tool in "${agent_tools[@]}"; do
+        (
+            diagnose_agent "$tool" > "$work_dir/$tool.diag"
+            if [[ $tool == codex ]]; then
+                codex_isolation > "$work_dir/isolation.diag"
+            fi
+        ) &
+    done
+    diagnose_network > "$work_dir/network.diag" &
+    diagnose_system "$1"
+    wait
+    for tool in "${agent_tools[@]}"; do
+        cat -- "$work_dir/$tool.diag"
+    done
+    cat -- "$work_dir/network.diag"
+    printf '@diag\tisolation\tcodex\t%s\t-\n' "$(< "$work_dir/isolation.diag")"
+}
+
 stage="${1:-}"
 case "$stage" in
     system)
@@ -294,7 +494,7 @@ case "$stage" in
         apt-get install -y --no-install-recommends ca-certificates curl git gh ripgrep nano
         exit 0
         ;;
-    agents|opencode|versions|update) ;;
+    agents|opencode|versions|update|diagnose) ;;
     *) printf '%s\n' 'Etapa interna desconhecida. Use install.sh no Termux.' >&2; exit 2 ;;
 esac
 
@@ -326,6 +526,10 @@ case "$stage" in
         ;;
     versions)
         print_versions
+        ;;
+    diagnose)
+        [[ $# -le 2 ]] || fail 'Uso interno: diagnose [pasta].'
+        print_diagnostics "${2:-}"
         ;;
     update)
         [[ $# -eq 3 ]] || fail 'Uso interno: update <agente> <versao>.'

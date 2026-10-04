@@ -11,6 +11,7 @@ export TERMUX_AI_TEST_ARGS="$test_root/arguments"
 export TERMUX_AI_TEST_STAGE_INPUT="$test_root/stage-input"
 export TERMUX_AI_TEST_STAGE_VERBOSE="$test_root/stage-verbose"
 export TERMUX_AI_TEST_VERSIONS="$test_root/versions.txt"
+export TERMUX_AI_TEST_DIAG="$test_root/diagnostics.txt"
 export TERMUX_AI_TEST_UPDATES="$test_root/updates.log"
 export PATH="$test_root/bin:$PATH"
 unset TERMUX_AI_GUEST PROOT_VERBOSE
@@ -25,6 +26,7 @@ for index in "${!arguments[@]}"; do
         printf '%s\n' "${PROOT_VERBOSE-unset}" > "$TERMUX_AI_TEST_STAGE_VERBOSE"
         case "${arguments[index + 2]:-}" in
             versions) cat "$TERMUX_AI_TEST_VERSIONS" ;;
+            diagnose) cat "$TERMUX_AI_TEST_DIAG" ;;
             update)
                 printf '%s %s\n' "${arguments[index + 3]:-}" "${arguments[index + 4]:-}" >> "$TERMUX_AI_TEST_UPDATES"
                 if [[ " ${TERMUX_AI_TEST_UPDATE_FAILURES:-} " == *" ${arguments[index + 3]:-} "* ]]; then
@@ -130,7 +132,7 @@ assert_equal "${actual_args[3]}" "$PWD" 'preserves the working directory in the 
 assert_equal "${actual_args[9]}" claude 'selects the agent in the adopted Ubuntu'
 assert_equal "${actual_args[10]}" 'two words' 'preserves arguments in the adopted Ubuntu'
 printf 'name=ubuntu\nuser=dev' > "$launcher_state/linux.conf"
-bash "$project_root/bin/ia" codex
+bash "$project_root/bin/ia" codex 2> /dev/null
 mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
 assert_equal "${actual_args[2]}" --user 'passes a configured Linux user'
 assert_equal "${actual_args[3]}" dev 'uses the configured Linux user'
@@ -162,6 +164,8 @@ grep -q 'Uso:' "$test_root/help.log"
 grep -q 'OpenCode:' "$test_root/help.log"
 grep -q 'ia versoes' "$test_root/help.log"
 grep -q 'ia atualizar' "$test_root/help.log"
+grep -q 'ia diagnostico' "$test_root/help.log"
+grep -q 'Pedir aprovacao' "$test_root/help.log"
 if bash "$project_root/bin/ia" unknown > /dev/null 2>&1; then
     printf '%s\n' 'FAIL unknown command was accepted' >&2
     exit 1
@@ -172,6 +176,59 @@ actual_status=0
 TERMUX_AI_TEST_EXIT=17 bash "$project_root/bin/ia" copilot || actual_status=$?
 assert_equal "$actual_status" 17 'preserves agent exit status'
 printf '%s\n' 'PASS exit status'
+
+expect_codex_launch() {
+    local expected="$1" notice="$2"
+    shift 2
+    rm -f "$TERMUX_AI_TEST_ARGS"
+    "$@" 2> "$test_root/codex-notice.log"
+    mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+    assert_equal "$(IFS='|'; printf '%s' "${actual_args[*]:11}")" "$expected" "Codex arguments for: ${*:2}"
+    case "$notice" in
+        ask) grep -q 'Modo Pedir aprovacao' "$test_root/codex-notice.log" || fail_test "missing approval notice: ${*:2}" ;;
+        exec) grep -q 'falham em exec e review' "$test_root/codex-notice.log" || fail_test "missing exec notice: ${*:2}" ;;
+        none) test ! -s "$test_root/codex-notice.log" || fail_test "unexpected Codex notice: ${*:2}" ;;
+    esac
+}
+
+expect_codex_unchanged() {
+    local notice="$1"
+    shift
+    expect_codex_launch "$(IFS='|'; printf 'codex|%s' "$*")" "$notice" bash "$project_root/bin/ia" codex "$@"
+}
+
+codex_policy='-s|workspace-write|-a|on-request'
+expect_codex_launch "codex|$codex_policy" ask bash "$project_root/bin/ia" codex
+expect_codex_launch "codex|$codex_policy" ask bash "$test_root/bin/codex"
+expect_codex_launch "codex|$codex_policy|fix the tests" ask bash "$project_root/bin/ia" codex 'fix the tests'
+expect_codex_launch "codex|-m|gpt-5|resume|$codex_policy|--last" ask bash "$project_root/bin/ia" codex -m gpt-5 resume --last
+expect_codex_launch "codex|fork|$codex_policy|session-id" ask bash "$project_root/bin/ia" codex fork session-id
+expect_codex_launch "codex|$codex_policy|-c|model=\"o3\"|explain" ask bash "$project_root/bin/ia" codex -c 'model="o3"' explain
+expect_codex_launch "codex|$codex_policy|-i|resume|describe" ask bash "$project_root/bin/ia" codex -i resume describe
+expect_codex_launch "codex|$codex_policy|--|-s literal" ask bash "$project_root/bin/ia" codex -- '-s literal'
+expect_codex_unchanged none -s read-only
+expect_codex_unchanged none --sandbox=danger-full-access 'fix the tests'
+expect_codex_unchanged none -a never
+expect_codex_unchanged none --ask-for-approval=untrusted
+expect_codex_unchanged none -p work
+expect_codex_unchanged none --profile=work
+expect_codex_unchanged none --approve-for-me
+expect_codex_unchanged none --dangerously-bypass-approvals-and-sandbox
+expect_codex_unchanged none --full-auto
+expect_codex_unchanged none -c approval_policy=never
+expect_codex_unchanged none '--config=sandbox_mode="read-only"'
+expect_codex_unchanged none -c 'permissions.network = true'
+expect_codex_unchanged none -cprofile=work
+expect_codex_unchanged none resume --last -s read-only
+expect_codex_unchanged none login status
+expect_codex_unchanged none --version
+expect_codex_unchanged none resume --help
+expect_codex_unchanged none mcp list
+expect_codex_unchanged none sandbox -- /bin/true
+expect_codex_unchanged exec exec 'run the tests'
+expect_codex_unchanged exec e 'run the tests'
+expect_codex_unchanged exec review
+printf '%s\n' 'PASS Codex opens in approval mode unless the user picks a policy'
 
 mkdir -p "$launcher_state"
 cp "$setup_script" "$launcher_state/setup-linux.sh"
@@ -249,6 +306,192 @@ expect_failure 'maintenance ran inside Linux' env TERMUX_AI_GUEST=1 bash "$proje
 grep -q 'fora do Linux' "$test_root/expected-failure.log"
 test ! -e "$TERMUX_AI_TEST_ARGS"
 printf '%s\n' 'PASS maintenance commands validate their environment'
+
+termux_diag_bin="$test_root/termux-diag-bin"
+mkdir -p "$termux_diag_bin"
+cat > "$termux_diag_bin/getprop" <<'MOCK'
+#!/usr/bin/env bash
+[[ $* == ro.build.version.release ]] || exit 2
+printf '16\n'
+MOCK
+cat > "$termux_diag_bin/uname" <<'MOCK'
+#!/usr/bin/env bash
+[[ $* == -m ]] || exit 2
+printf 'aarch64\n'
+MOCK
+cat > "$termux_diag_bin/dpkg-query" <<'MOCK'
+#!/usr/bin/env bash
+[[ $* == '-W -f=${Version} proot-distro' ]] || exit 2
+printf '5.3.0'
+MOCK
+cat > "$termux_diag_bin/df" <<'MOCK'
+#!/usr/bin/env bash
+[[ $# -eq 2 && $1 == -Pk && $2 == "$HOME" ]] || exit 2
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+printf '/dev/block/dm-50 100000000 27435984 %s 28%% /data\n' "${TERMUX_AI_TEST_FREE_KIB:-72564016}"
+MOCK
+chmod +x "$termux_diag_bin/"*
+run_termux_diagnostics() {
+    env PATH="$termux_diag_bin:$PATH" TERMUX_VERSION=0.118.3 "$@" bash "$project_root/bin/ia" diagnostico
+}
+
+expect_lines() {
+    local log_file="$1" pattern
+    shift
+    for pattern in "$@"; do
+        grep -Eq -- "$pattern" "$log_file" || fail_test "missing line /$pattern/ in $log_file"
+    done
+}
+
+printf '%s\n' \
+    'proot warning: unrelated output' \
+    $'@diag\tcheck\tdistro\tok\tUbuntu 26.04.1 LTS' \
+    $'@diag\tcheck\tnode\tok\t22.23.3' \
+    $'@diag\tcheck\tgit\tok\t2.53.0' \
+    $'@diag\tcheck\tworkdir\tok\t-' \
+    $'@diag\tagent\tcopilot\tyes\t1.0.91' \
+    $'@diag\tagent\tclaude\tyes\t2.1.289' \
+    $'@diag\tagent\tcodex\tyes\t0.160.0' \
+    $'@diag\tagent\tagy\tyes\t1.2.16' \
+    $'@diag\tagent\topencode\tno\t1.18.34' \
+    $'@diag\tcheck\tnetwork\tok\t-' \
+    $'@diag\tisolation\tcodex\tunavailable\t-' \
+    $'@diag\tagent\tgemini\tyes\t1.0.0' \
+    $'@diag\tagent\tclaude\tno\t2.1;id' \
+    $'@diag\tcheck\tdistro\tok\tUbuntu;reboot' \
+    $'@diag\tcheck\tnode\tok\t-' \
+    $'@diag\tisolation\tclaude\tactive\t-' \
+    $'@diag\tagent\tcodex\tyes\t0.160.0\textra' \
+    > "$TERMUX_AI_TEST_DIAG"
+run_termux_diagnostics > "$test_root/diag.log"
+mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+assert_equal "${actual_args[*]:0:9}" 'login termux-ai --user node -- /bin/bash -se -- diagnose' 'diagnoses inside the managed Linux'
+assert_equal "${actual_args[9]}" "$PWD" 'sends the current folder to the diagnostic'
+assert_equal "${#actual_args[@]}" 10 'sends only the folder to the diagnostic'
+cmp "$TERMUX_AI_TEST_STAGE_INPUT" "$launcher_state/setup-linux.sh"
+expect_lines "$test_root/diag.log" \
+    '^  Android +16 \(aarch64\)$' \
+    '^  Termux +0\.118\.3$' \
+    '^  PRoot-Distro +5\.3\.0$' \
+    '^  Espaco livre +69\.2 GiB$' \
+    '^  Linux +termux-ai, usuario node$' \
+    '^  Sistema +Ubuntu 26\.04\.1 LTS$' \
+    '^  Node\.js +22\.23\.3$' \
+    '^  Git +2\.53\.0$' \
+    '^  Internet +ok$' \
+    '^  Pasta atual +aceita gravacao$' \
+    '^  GitHub Copilot +1\.0\.91 +login ok$' \
+    '^  Claude Code +2\.1\.289 +login ok$' \
+    '^  Codex +0\.160\.0 +login ok$' \
+    '^  Antigravity CLI +1\.2\.16 +login ok$' \
+    '^  OpenCode +1\.18\.34 +sem login$' \
+    '^  PRoot nao isola os agentes' \
+    '^  Codex: o sandbox nao funciona aqui; ia codex abre no modo Pedir aprovacao\.$' \
+    '^  - OpenCode: entre com ia opencode auth login; sem chave de API, use GitHub Copilot ou ChatGPT Plus/Pro\.$'
+assert_equal "$(grep -c '^  - ' "$test_root/diag.log")" 1 'suggests only the missing login'
+assert_equal "$(grep -Ec '^  (GitHub Copilot|Claude Code|Codex|Antigravity CLI|OpenCode) ' "$test_root/diag.log")" 5 'shows one row per agent'
+if grep -Eq 'gemini|unrelated|;id|reboot|extra' "$test_root/diag.log"; then
+    fail_test 'unexpected Linux output reached the diagnostic'
+fi
+printf '%s\n' 'PASS diagnostic shows Termux, Linux, agents and protections'
+
+printf '%s\n' \
+    $'@diag\tcheck\tdistro\tok\t-' \
+    $'@diag\tcheck\tnode\told\t20.11.1' \
+    $'@diag\tcheck\tgit\tmissing\t-' \
+    $'@diag\tcheck\tworkdir\tfail\t-' \
+    $'@diag\tagent\tcopilot\tno\t1.0.91' \
+    $'@diag\tagent\tclaude\tunknown\t2.1.289' \
+    $'@diag\tagent\tcodex\tno\t0.160.0' \
+    $'@diag\tagent\tagy\tmissing\t-' \
+    $'@diag\tagent\topencode\tbroken\t-' \
+    $'@diag\tcheck\tnetwork\tfail\t-' \
+    $'@diag\tisolation\tcodex\tineffective\t-' \
+    > "$TERMUX_AI_TEST_DIAG"
+run_termux_diagnostics TERMUX_AI_TEST_FREE_KIB=1572864 > "$test_root/diag-problems.log"
+expect_lines "$test_root/diag-problems.log" \
+    '^  Espaco livre +1\.5 GiB$' \
+    '^  Sistema +\?$' \
+    '^  Node\.js +20\.11\.1 \(requer 22 ou superior\)$' \
+    '^  Git +nao encontrado$' \
+    '^  Internet +sem acesso$' \
+    '^  Pasta atual +sem gravacao$' \
+    '^  GitHub Copilot +1\.0\.91 +sem login$' \
+    '^  Claude Code +2\.1\.289 +login nao verificado$' \
+    '^  Codex +0\.160\.0 +sem login$' \
+    '^  Antigravity CLI +- +nao instalado$' \
+    '^  OpenCode +- +nao inicia$' \
+    '^  Codex: o sandbox iniciou, mas nao bloqueou uma gravacao de teste\.$' \
+    '^  - Pouco espaco livre' \
+    '^  - Node\.js 22\+ e Git sao necessarios' \
+    '^  - Sem internet no Linux' \
+    '^  - A pasta atual nao aceita gravacao' \
+    '^  - GitHub Copilot: entre com ia copilot login\.$' \
+    '^  - Codex: entre com ia codex login\.$' \
+    '^  - Antigravity CLI: instale com ia atualizar agy\.$' \
+    '^  - OpenCode: reinstale com ia atualizar opencode\.$' \
+    '^  - Codex: nao confie no sandbox'
+assert_equal "$(grep -c '^  - ' "$test_root/diag-problems.log")" 9 'suggests one step per problem'
+if grep -q 'ia claude auth login' "$test_root/diag-problems.log"; then
+    fail_test 'unverified login was reported as missing'
+fi
+printf '%s\n' 'PASS diagnostic explains each problem with a next step'
+
+printf '%s\n' \
+    $'@diag\tcheck\tdistro\tok\tDebian GNU/Linux 12 (bookworm)' \
+    $'@diag\tcheck\tnode\tok\t24.4.0' \
+    $'@diag\tcheck\tgit\tok\t2.39.5' \
+    $'@diag\tcheck\tworkdir\tskip\t-' \
+    $'@diag\tagent\tcopilot\tyes\t1.0.91' \
+    $'@diag\tagent\tclaude\tyes\t2.1.289' \
+    $'@diag\tagent\tcodex\tyes\t0.160.0' \
+    $'@diag\tagent\tagy\tyes\t1.2.16' \
+    $'@diag\tagent\topencode\tyes\t1.18.34' \
+    $'@diag\tcheck\tnetwork\tok\t-' \
+    $'@diag\tisolation\tcodex\tactive\t-' \
+    > "$TERMUX_AI_TEST_DIAG"
+run_termux_diagnostics > "$test_root/diag-ok.log"
+expect_lines "$test_root/diag-ok.log" \
+    '^  Sistema +Debian GNU/Linux 12 \(bookworm\)$' \
+    '^  Pasta atual +nao verificada$' \
+    '^  Codex: o sandbox bloqueou uma gravacao de teste\.$' \
+    '^  Nenhuma acao necessaria\.$'
+printf '%s\n' \
+    $'@diag\tagent\tcodex\tmissing\t-' \
+    $'@diag\tisolation\tcodex\tmissing\t-' \
+    > "$TERMUX_AI_TEST_DIAG"
+run_termux_diagnostics > "$test_root/diag-partial.log"
+expect_lines "$test_root/diag-partial.log" \
+    '^  Node\.js +nao verificado$' \
+    '^  Internet +nao verificada$' \
+    '^  Codex +- +nao instalado$' \
+    '^  Claude Code +- +nao verificado$' \
+    '^  - Codex: instale com ia atualizar codex\.$'
+if grep -q '^  Codex:' "$test_root/diag-partial.log"; then
+    fail_test 'sandbox status was shown without Codex'
+fi
+printf '%s\n' 'PASS diagnostic handles healthy and partial results'
+
+printf 'name=ubuntu\nuser=root\n' > "$launcher_state/linux.conf"
+run_termux_diagnostics > "$test_root/diag-ubuntu.log"
+mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+assert_equal "${actual_args[*]:0:7}" 'login ubuntu -- /bin/bash -se -- diagnose' 'diagnoses inside the adopted Ubuntu'
+assert_equal "${actual_args[7]}" "$PWD" 'sends the folder to the adopted Ubuntu'
+expect_lines "$test_root/diag-ubuntu.log" '^  Linux +ubuntu, usuario root$'
+rm "$launcher_state/linux.conf"
+expect_failure 'empty diagnostic was accepted' env TERMUX_AI_TEST_DIAG=/dev/null bash "$project_root/bin/ia" diagnostico
+grep -q 'Nao foi possivel consultar o Linux' "$test_root/expected-failure.log"
+rm -f "$TERMUX_AI_TEST_ARGS"
+actual_status=0
+bash "$project_root/bin/ia" diagnostico extra > /dev/null 2>&1 || actual_status=$?
+assert_equal "$actual_status" 2 'rejects extra diagnostic arguments'
+test ! -e "$TERMUX_AI_TEST_ARGS"
+expect_failure 'diagnostic ran inside Linux' env TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" diagnostico
+grep -q 'fora do Linux' "$test_root/expected-failure.log"
+test ! -e "$TERMUX_AI_TEST_ARGS"
+grep -Fq '\n9. Diagnostico do ambiente\n0. Sair' "$project_root/bin/ia"
+grep -Fq '9) run_maintenance show_diagnostics || true; continue ;;' "$project_root/bin/ia"
+printf '%s\n' 'PASS diagnostic validates its environment and is in the menu'
 
 export HOME="$test_root/home"
 export PREFIX="$test_root/prefix"
@@ -352,6 +595,8 @@ printf 'export ORIGINAL_SETTING=kept\n' > "$test_root/bashrc.expected"
 cmp "$state_dir/bashrc.before" "$test_root/bashrc.expected"
 assert_equal "$(< "$state_dir/linux.conf")" $'name=termux-ai\nuser=node' 'records the managed Linux'
 cmp "$state_dir/setup-linux.sh" "$setup_script"
+grep -Fqx 'Codex sem sandbox no Android: ia codex abre no modo Pedir aprovacao.' "$test_root/first-install.log"
+grep -Fq 'Use ia diagnostico para conferir logins e protecoes.' "$test_root/first-install.log"
 grep -Fqx 'proot login termux-ai -- /bin/bash -se -- system' "$TERMUX_AI_TEST_INSTALL_LOG"
 grep -Fqx 'proot login termux-ai --user node -- /bin/bash -se -- agents' "$TERMUX_AI_TEST_INSTALL_LOG"
 bash "$project_root/install.sh" --yes > "$test_root/reinstall.log"
@@ -544,6 +789,7 @@ NODE
     https://storage.googleapis.com/antigravity-public/antigravity-cli/test/agy.tar.gz)
         cp "$TERMUX_AI_TEST_AGY_PAYLOAD" "$destination"
         ;;
+    https://registry.npmjs.org/) exit "${TERMUX_AI_TEST_NETWORK_FAILURE:-0}" ;;
     *) printf 'Unexpected download: %s\n' "$source_url" >&2; exit 2 ;;
 esac
 MOCK
@@ -706,7 +952,7 @@ printf '%s\n' 'PASS OpenCode install and startup failures stop the setup'
 
 : > "$TERMUX_AI_TEST_NPM_LOG"
 : > "$TERMUX_AI_TEST_DOWNLOAD_LOG"
-for invalid_stage in update 'update codex' 'update gemini 1.0.0' 'update codex 1.0' 'update codex 1.0.0;id' 'update codex 1.0.0 extra' unknown; do
+for invalid_stage in update 'update codex' 'update gemini 1.0.0' 'update codex 1.0' 'update codex 1.0.0;id' 'update codex 1.0.0 extra' 'diagnose a b' unknown; do
     read -r -a stage_args <<< "$invalid_stage"
     expect_failure "invalid stage accepted: $invalid_stage" bash "$setup_script" "${stage_args[@]}"
 done
@@ -728,6 +974,206 @@ done
 bash "$setup_script" opencode > "$test_root/opencode-only-rerun.log"
 grep -Fqx "OpenCode $opencode_pin ja instalado; mantido." "$test_root/opencode-only-rerun.log"
 printf '%s\n' 'PASS OpenCode-only setup preserves the other agents'
+
+export HOME="$test_root/diag-home"
+export TERMUX_AI_TEST_SANDBOX_LOG="$test_root/sandbox.log"
+diag_tools="$test_root/diag-tools"
+diag_system="$test_root/diag-system"
+diag_work="$test_root/diag work"
+sandbox_probe="$HOME/.termux-ai-sandbox-probe"
+mkdir -p "$HOME/.local/bin" "$HOME/.copilot" "$HOME/.gemini/antigravity-cli" "$diag_tools" "$diag_system" "$diag_work"
+# Espelha /usr/bin e /bin sem os agentes reais de quem roda os testes no Linux do PRoot.
+ln -s /usr/bin/* /bin/* "$diag_system/" 2> /dev/null || true
+rm -f "$diag_system/"{codex,copilot,claude,agy,antigravity,opencode}
+test -x "$diag_system/bash" || fail_test 'could not mirror the system commands'
+cp "$test_root/bin/curl" "$diag_tools/curl"
+cat > "$diag_tools/node" <<'MOCK'
+#!/usr/bin/env bash
+[[ $* == --version ]] || exit 2
+printf 'v%s\n' "${TERMUX_AI_TEST_NODE_VERSION:-22.23.3}"
+exit "${TERMUX_AI_TEST_NODE_FAILURE:-0}"
+MOCK
+cat > "$diag_tools/git" <<'MOCK'
+#!/usr/bin/env bash
+[[ $* == --version ]] || exit 2
+printf 'git version 2.53.0\n'
+exit "${TERMUX_AI_TEST_GIT_FAILURE:-0}"
+MOCK
+# Agente falso: o nome do arquivo escolhe o agente e TERMUX_AI_TEST_DIAG_<AGENTE> o estado.
+cat > "$HOME/.local/bin/codex" <<'MOCK'
+#!/usr/bin/env bash
+tool="${0##*/}"
+state_name="TERMUX_AI_TEST_DIAG_${tool^^}"
+state="${!state_name:-yes}"
+if [[ $* == --version ]]; then
+    [[ $state != broken ]] || exit 3
+    printf '%s 1.2.3\n' "$tool"
+    exit 0
+fi
+case "$tool:${1:-}" in
+    codex:login)
+        case "$state" in
+            yes) printf 'Logged in using ChatGPT\n' >&2 ;;
+            no) printf 'Not logged in\n' >&2; exit 1 ;;
+            *) printf 'Error: credentials unreadable\n' >&2; exit 1 ;;
+        esac
+        ;;
+    codex:sandbox)
+        printf '%s\n' "$*" >> "$TERMUX_AI_TEST_SANDBOX_LOG"
+        while [[ $# -gt 0 && $1 != -- ]]; do
+            shift
+        done
+        shift
+        case "${TERMUX_AI_TEST_SANDBOX:-unavailable}" in
+            unavailable) printf 'error building bubblewrap command\n' >&2; exit 1 ;;
+            ineffective) exec "$@" ;;
+            active) [[ $1 == /bin/true ]] || exit 1 ;;
+        esac
+        ;;
+    claude:auth)
+        case "$state" in
+            yes) printf '{\n  "loggedIn": true,\n  "email": "secret@example.com"\n}\n' ;;
+            no) printf '{\n  "loggedIn": false\n}\n'; exit 1 ;;
+            *) printf 'Unexpected output\n' ;;
+        esac
+        ;;
+    opencode:auth)
+        if [[ $state == unknown ]]; then
+            printf 'Unexpected output\n'
+            exit 0
+        fi
+        printf '\033[90m+\033[0m  Credentials \033[90m~/.local/share/opencode/auth.json\033[0m\n'
+        if [[ $state == yes ]]; then
+            printf '|  GitHub Copilot \033[90moauth\033[0m\n\033[90m+\033[0m  2 credentials\n'
+        else
+            printf '\033[90m+\033[0m  0 credentials\n'
+        fi
+        if [[ $state == env ]]; then
+            printf '\033[90m+\033[0m  Environment\n|  OpenAI \033[90mOPENAI_API_KEY\033[0m\n\033[90m+\033[0m  1 environment variable\n'
+        fi
+        ;;
+    *) exit 2 ;;
+esac
+MOCK
+for tool_name in copilot claude agy opencode; do
+    cp "$HOME/.local/bin/codex" "$HOME/.local/bin/$tool_name"
+done
+chmod +x "$diag_tools/"* "$HOME/.local/bin/"*
+printf 'token\n' > "$HOME/.gemini/antigravity-cli/antigravity-oauth-token"
+
+write_copilot_config() {
+    if [[ $1 == yes ]]; then
+        printf '{\n  "loggedInUsers": [\n    {\n      "host": "https://github.com",\n      "login": "octocat"\n    }\n  ]\n}\n' \
+            > "$HOME/.copilot/config.json"
+    else
+        printf '{\n  "loggedInUsers": [ ],\n  "trusted_folders": [\n    "/tmp"\n  ]\n}\n' > "$HOME/.copilot/config.json"
+    fi
+}
+
+# Os tokens reais do ambiente nunca entram no teste.
+run_guest_diagnostics() {
+    env -u COPILOT_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN -u COPILOT_PROVIDER_BASE_URL -u COPILOT_HOME \
+        PATH="$diag_tools:$diag_system" "$@"
+}
+
+expect_diag_lines() {
+    local log_file="$1" expected_line
+    shift
+    for expected_line in "$@"; do
+        grep -Fqx -- "$expected_line" "$log_file" || fail_test "missing <$expected_line> in $log_file"
+    done
+}
+
+write_copilot_config yes
+: > "$TERMUX_AI_TEST_SANDBOX_LOG"
+run_guest_diagnostics bash "$setup_script" diagnose "$diag_work" > "$test_root/guest-diag.log"
+expected_diag="$(printf '@diag\t%s\t%s\t%s\t%s\n' \
+    check node ok 22.23.3 \
+    check git ok 2.53.0 \
+    check workdir ok - \
+    agent copilot yes 1.2.3 \
+    agent claude yes 1.2.3 \
+    agent codex yes 1.2.3 \
+    agent agy yes 1.2.3 \
+    agent opencode yes 1.2.3 \
+    check network ok - \
+    isolation codex unavailable -)"
+assert_equal "$(sed 1d "$test_root/guest-diag.log")" "$expected_diag" 'reports every check and agent in order'
+grep -Eq $'^@diag\tcheck\tdistro\tok\t([A-Za-z0-9 ._()/+:-]{1,60}|-)$' <<< "$(head -n 1 "$test_root/guest-diag.log")" \
+    || fail_test 'invalid Linux name in the diagnostic'
+assert_equal "$(< "$TERMUX_AI_TEST_SANDBOX_LOG")" 'sandbox -c sandbox_mode="read-only" -- /bin/true' 'tests the Codex sandbox in read-only mode'
+test -z "$(ls -A "$diag_work")" || fail_test 'diagnostic left files in the work folder'
+if grep -Eq 'secret@example\.com|octocat' "$test_root/guest-diag.log"; then
+    fail_test 'diagnostic exposed account details'
+fi
+printf '%s\n' 'PASS guest diagnostic reports versions, logins and the Codex sandbox'
+
+write_copilot_config no
+rm "$HOME/.gemini/antigravity-cli/antigravity-oauth-token"
+run_guest_diagnostics TERMUX_AI_TEST_DIAG_CODEX=no TERMUX_AI_TEST_DIAG_CLAUDE=no TERMUX_AI_TEST_DIAG_OPENCODE=no \
+    bash "$setup_script" diagnose "$diag_work" > "$test_root/guest-diag-no.log"
+expect_diag_lines "$test_root/guest-diag-no.log" \
+    $'@diag\tagent\tcopilot\tno\t1.2.3' \
+    $'@diag\tagent\tclaude\tno\t1.2.3' \
+    $'@diag\tagent\tcodex\tno\t1.2.3' \
+    $'@diag\tagent\tagy\tno\t1.2.3' \
+    $'@diag\tagent\topencode\tno\t1.2.3'
+printf 'export GH_TOKEN=test-token-value\n' > "$HOME/.profile"
+run_guest_diagnostics TERMUX_AI_TEST_DIAG_OPENCODE=env bash "$setup_script" diagnose "$diag_work" > "$test_root/guest-diag-env.log"
+expect_diag_lines "$test_root/guest-diag-env.log" \
+    $'@diag\tagent\tcopilot\tyes\t1.2.3' \
+    $'@diag\tagent\topencode\tyes\t1.2.3'
+if grep -q 'test-token-value' "$test_root/guest-diag-env.log"; then
+    fail_test 'diagnostic exposed a token'
+fi
+rm "$HOME/.profile" "$HOME/.copilot/config.json"
+mv "$HOME/.local/bin/agy" "$test_root/agy.diag"
+run_guest_diagnostics TERMUX_AI_TEST_DIAG_COPILOT=broken TERMUX_AI_TEST_DIAG_CLAUDE=unknown \
+    TERMUX_AI_TEST_DIAG_CODEX=unknown TERMUX_AI_TEST_DIAG_OPENCODE=unknown \
+    bash "$setup_script" diagnose "$diag_work" > "$test_root/guest-diag-unknown.log"
+expect_diag_lines "$test_root/guest-diag-unknown.log" \
+    $'@diag\tagent\tcopilot\tbroken\t-' \
+    $'@diag\tagent\tclaude\tunknown\t1.2.3' \
+    $'@diag\tagent\tcodex\tunknown\t1.2.3' \
+    $'@diag\tagent\tagy\tmissing\t-' \
+    $'@diag\tagent\topencode\tunknown\t1.2.3'
+run_guest_diagnostics bash "$setup_script" diagnose "$diag_work" > "$test_root/guest-diag-copilot.log"
+expect_diag_lines "$test_root/guest-diag-copilot.log" $'@diag\tagent\tcopilot\tno\t1.2.3'
+mv "$test_root/agy.diag" "$HOME/.local/bin/agy"
+printf '%s\n' 'PASS guest diagnostic separates missing, unknown and broken agents'
+
+for sandbox_mode in ineffective active; do
+    : > "$TERMUX_AI_TEST_SANDBOX_LOG"
+    run_guest_diagnostics TERMUX_AI_TEST_SANDBOX="$sandbox_mode" bash "$setup_script" diagnose "$diag_work" \
+        > "$test_root/guest-diag-sandbox.log"
+    expect_diag_lines "$test_root/guest-diag-sandbox.log" $'@diag\tisolation\tcodex\t'"$sandbox_mode"$'\t-'
+    assert_equal "$(grep -c '^sandbox -c sandbox_mode="read-only" -- ' "$TERMUX_AI_TEST_SANDBOX_LOG")" 2 'tests the sandbox and a blocked write'
+    test ! -e "$sandbox_probe" || fail_test 'sandbox probe was left behind'
+done
+mv "$HOME/.local/bin/codex" "$test_root/codex.diag"
+run_guest_diagnostics bash "$setup_script" diagnose "$diag_work" > "$test_root/guest-diag-no-codex.log"
+expect_diag_lines "$test_root/guest-diag-no-codex.log" \
+    $'@diag\tagent\tcodex\tmissing\t-' \
+    $'@diag\tisolation\tcodex\tmissing\t-'
+mv "$test_root/codex.diag" "$HOME/.local/bin/codex"
+printf '%s\n' 'PASS guest diagnostic only trusts a sandbox that blocks writes'
+
+run_guest_diagnostics TERMUX_AI_TEST_NODE_VERSION=20.11.1 TERMUX_AI_TEST_NETWORK_FAILURE=7 \
+    bash "$setup_script" diagnose "$test_root/missing folder" > "$test_root/guest-diag-system.log"
+expect_diag_lines "$test_root/guest-diag-system.log" \
+    $'@diag\tcheck\tnode\told\t20.11.1' \
+    $'@diag\tcheck\tworkdir\tfail\t-' \
+    $'@diag\tcheck\tnetwork\tfail\t-'
+test ! -e "$test_root/missing folder"
+run_guest_diagnostics TERMUX_AI_TEST_NODE_FAILURE=1 TERMUX_AI_TEST_GIT_FAILURE=1 \
+    bash "$setup_script" diagnose relative/folder > "$test_root/guest-diag-system.log"
+expect_diag_lines "$test_root/guest-diag-system.log" \
+    $'@diag\tcheck\tnode\tmissing\t-' \
+    $'@diag\tcheck\tgit\tmissing\t-' \
+    $'@diag\tcheck\tworkdir\tskip\t-'
+run_guest_diagnostics bash "$setup_script" diagnose > "$test_root/guest-diag-system.log"
+expect_diag_lines "$test_root/guest-diag-system.log" $'@diag\tcheck\tworkdir\tskip\t-'
+printf '%s\n' 'PASS guest diagnostic checks Node.js, Git, network and the work folder'
 
 export HOME="$test_root/ubuntu-home"
 export PREFIX="$test_root/ubuntu-prefix"

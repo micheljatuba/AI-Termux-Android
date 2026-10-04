@@ -3,16 +3,20 @@ set -euo pipefail
 
 state_dir="$HOME/.local/share/termux-ai"
 version_pattern='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+safe_text_pattern='^[A-Za-z0-9 ._()/+:-]{1,60}$'
 
 show_help() {
     printf '%s\n' \
         'Uso: ia [copilot|claude|codex|antigravity|agy|opencode|terminal] [argumentos]' \
         '     ia versoes' \
         '     ia atualizar [--yes] [agente...]' \
+        '     ia diagnostico' \
         'Sem argumentos, abre o menu em uma sessao interativa.' \
         'versoes: compara as versoes instaladas com as mais recentes.' \
         'atualizar: mostra o plano e atualiza os agentes apos confirmacao.' \
-        'Codex: execucao no sandbox nao validada para Android/PRoot.' \
+        'diagnostico: verifica Linux, agentes, logins e protecoes.' \
+        'Codex: sem sandbox no Android/PRoot; abre no modo Pedir aprovacao.' \
+        '       Para escolher outro modo, informe -s/--sandbox ou -a/--ask-for-approval.' \
         'Antigravity CLI: comandos antigravity ou agy.' \
         'OpenCode: integracao experimental, sem validacao em Android/PRoot.'
 }
@@ -59,7 +63,7 @@ load_linux_config() {
 
 prepare_maintenance() {
     if [[ ${TERMUX_AI_GUEST:-} == 1 ]]; then
-        printf '%s\n' 'Use ia versoes e ia atualizar no Termux, fora do Linux.' >&2
+        printf '%s\n' 'Use ia versoes, ia atualizar e ia diagnostico no Termux, fora do Linux.' >&2
         exit 1
     fi
     require_proot_distro
@@ -200,6 +204,232 @@ update_agents() {
     printf '\n%s\n' 'Atualizacao concluida.'
 }
 
+# Aceita somente linhas conhecidas; qualquer outra saida do Linux e ignorada.
+valid_diag_line() {
+    local kind="$1" name="$2" status="$3" detail="$4"
+    case "$kind" in
+        check)
+            case "$name:$status" in
+                distro:ok) [[ $detail == - || $detail =~ $safe_text_pattern ]] ;;
+                node:ok|node:old|git:ok) [[ $detail =~ $version_pattern ]] ;;
+                node:missing|git:missing|network:ok|network:fail|workdir:ok|workdir:fail|workdir:skip) [[ $detail == - ]] ;;
+                *) return 1 ;;
+            esac
+            ;;
+        agent)
+            case "$name" in
+                copilot|claude|codex|agy|opencode) ;;
+                *) return 1 ;;
+            esac
+            case "$status" in
+                yes|no|unknown) [[ $detail =~ $version_pattern ]] ;;
+                missing|broken) [[ $detail == - ]] ;;
+                *) return 1 ;;
+            esac
+            ;;
+        isolation)
+            [[ $name == codex ]] || return 1
+            case "$status" in
+                unavailable|ineffective|active|missing) [[ $detail == - ]] ;;
+                *) return 1 ;;
+            esac
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+agent_state_label() {
+    case "$1" in
+        yes) printf '%s' 'login ok' ;;
+        no) printf '%s' 'sem login' ;;
+        unknown) printf '%s' 'login nao verificado' ;;
+        missing) printf '%s' 'nao instalado' ;;
+        broken) printf '%s' 'nao inicia' ;;
+        *) printf '%s' 'nao verificado' ;;
+    esac
+}
+
+login_hint() {
+    case "$1" in
+        copilot) printf '%s' 'GitHub Copilot: entre com ia copilot login.' ;;
+        claude) printf '%s' 'Claude Code: entre com ia claude auth login.' ;;
+        codex) printf '%s' 'Codex: entre com ia codex login.' ;;
+        agy) printf '%s' 'Antigravity CLI: abra ia agy e conclua o login.' ;;
+        opencode) printf '%s' 'OpenCode: entre com ia opencode auth login; sem chave de API, use GitHub Copilot ou ChatGPT Plus/Pro.' ;;
+    esac
+}
+
+show_diagnostics() {
+    local output marker kind name status detail tool label release machine termux_version proot_version available_kib
+    local system_hint=0
+    local -A diag_status=() diag_detail=()
+    local -a next_steps=()
+    if (( $# > 0 )); then
+        show_help >&2
+        return 2
+    fi
+    release="$(getprop ro.build.version.release 2> /dev/null)" || release=''
+    [[ $release =~ ^[0-9A-Za-z._-]{1,20}$ ]] || release='?'
+    machine="$(uname -m 2> /dev/null)" || machine=''
+    [[ $machine =~ ^[0-9A-Za-z_]{1,20}$ ]] || machine='?'
+    termux_version="${TERMUX_VERSION:-}"
+    [[ $termux_version =~ ^[0-9A-Za-z._+-]{1,40}$ ]] || termux_version='?'
+    # shellcheck disable=SC2016
+    proot_version="$(dpkg-query -W -f='${Version}' proot-distro 2> /dev/null)" || proot_version=''
+    [[ $proot_version =~ ^[0-9A-Za-z.+~:-]{1,40}$ ]] || proot_version='?'
+    available_kib="$(df -Pk "$HOME" 2> /dev/null | awk 'NR == 2 { print $4 }')" || available_kib=''
+    printf '\n%s\n\n%s\n' 'Diagnostico do Termux AI' 'Termux'
+    printf '  %-15s %s (%s)\n' Android "$release" "$machine"
+    printf '  %-15s %s\n' Termux "$termux_version"
+    printf '  %-15s %s\n' PRoot-Distro "$proot_version"
+    if [[ $available_kib =~ ^[0-9]{1,15}$ ]]; then
+        available_kib=$((10#$available_kib))
+        printf '  %-15s %d.%d GiB\n' 'Espaco livre' $((available_kib / 1048576)) $((available_kib % 1048576 * 10 / 1048576))
+        if (( available_kib < 2 * 1048576 )); then
+            next_steps+=('Pouco espaco livre: mantenha pelo menos 2 GiB para atualizar os agentes.')
+        fi
+    else
+        printf '  %-15s %s\n' 'Espaco livre' '?'
+    fi
+    printf '  %-15s %s, usuario %s\n' Linux "$linux_name" "$linux_user"
+    printf '\nConsultando o Linux %s...\n' "$linux_name"
+    output="$(run_linux_stage diagnose "$PWD")" || true
+    while IFS=$'\t' read -r marker kind name status detail; do
+        [[ $marker == @diag ]] || continue
+        valid_diag_line "$kind" "$name" "$status" "$detail" || continue
+        diag_status["$kind:$name"]="$status"
+        diag_detail["$kind:$name"]="$detail"
+    done <<< "$output"
+    if (( ${#diag_status[@]} == 0 )); then
+        printf '%s\n' 'Nao foi possivel consultar o Linux. Execute novamente bash install.sh no Termux.' >&2
+        return 1
+    fi
+
+    printf '\n%s\n' Linux
+    label="${diag_detail[check:distro]:--}"
+    [[ $label != - ]] || label='?'
+    printf '  %-15s %s\n' Sistema "$label"
+    case "${diag_status[check:node]:-}" in
+        ok) label="${diag_detail[check:node]}" ;;
+        old) label="${diag_detail[check:node]} (requer 22 ou superior)"; system_hint=1 ;;
+        missing) label='nao encontrado'; system_hint=1 ;;
+        *) label='nao verificado' ;;
+    esac
+    printf '  %-15s %s\n' Node.js "$label"
+    case "${diag_status[check:git]:-}" in
+        ok) label="${diag_detail[check:git]}" ;;
+        missing) label='nao encontrado'; system_hint=1 ;;
+        *) label='nao verificado' ;;
+    esac
+    printf '  %-15s %s\n' Git "$label"
+    if (( system_hint )); then
+        next_steps+=('Node.js 22+ e Git sao necessarios no Linux: execute novamente bash install.sh no Termux.')
+    fi
+    case "${diag_status[check:network]:-}" in
+        ok) label='ok' ;;
+        fail)
+            label='sem acesso'
+            next_steps+=('Sem internet no Linux: confira a conexao; os agentes dependem dela.')
+            ;;
+        *) label='nao verificada' ;;
+    esac
+    printf '  %-15s %s\n' Internet "$label"
+    case "${diag_status[check:workdir]:-}" in
+        ok) label='aceita gravacao' ;;
+        fail)
+            label='sem gravacao'
+            next_steps+=('A pasta atual nao aceita gravacao no Linux: abra os agentes em uma pasta da home do Termux.')
+            ;;
+        *) label='nao verificada' ;;
+    esac
+    printf '  %-15s %s\n' 'Pasta atual' "$label"
+
+    printf '\n%s\n  %-16s %-12s %s\n' Agentes Agente Versao Situacao
+    for tool in copilot claude codex agy opencode; do
+        status="${diag_status[agent:$tool]:-}"
+        printf '  %-16s %-12s %s\n' "$(display_name "$tool")" "${diag_detail[agent:$tool]:--}" "$(agent_state_label "$status")"
+        case "$status" in
+            no) next_steps+=("$(login_hint "$tool")") ;;
+            missing) next_steps+=("$(display_name "$tool"): instale com ia atualizar $tool.") ;;
+            broken) next_steps+=("$(display_name "$tool"): reinstale com ia atualizar $tool.") ;;
+        esac
+    done
+
+    printf '\n%s\n  %s\n' Protecao 'PRoot nao isola os agentes: eles acessam os mesmos arquivos que o Termux.'
+    case "${diag_status[agent:codex]:-}" in
+        missing|broken) ;;
+        *)
+            case "${diag_status[isolation:codex]:-}" in
+                unavailable) printf '  %s\n' 'Codex: o sandbox nao funciona aqui; ia codex abre no modo Pedir aprovacao.' ;;
+                ineffective)
+                    printf '  %s\n' 'Codex: o sandbox iniciou, mas nao bloqueou uma gravacao de teste.'
+                    next_steps+=('Codex: nao confie no sandbox, pois comandos podem rodar sem aprovacao; use pastas com backup ou Git.')
+                    ;;
+                active) printf '  %s\n' 'Codex: o sandbox bloqueou uma gravacao de teste.' ;;
+                *) printf '  %s\n' 'Codex: sandbox nao verificado.' ;;
+            esac
+            ;;
+    esac
+    printf '  %s\n' 'Demais agentes: valem as confirmacoes de cada agente.'
+
+    printf '\n%s\n' 'Proximos passos'
+    if (( ${#next_steps[@]} == 0 )); then
+        printf '  %s\n' 'Nenhuma acao necessaria.'
+    else
+        printf '  - %s\n' "${next_steps[@]}"
+    fi
+}
+
+# Sem sandbox no Android/PRoot, o Codex so pede aprovacao no modo on-request.
+# Flags proprias de permissao, perfil ou ajuda mantem a escolha do usuario.
+classify_codex_args() {
+    local -a arguments=("$@")
+    local index argument config_key skip_value=0 command_index=-1
+    codex_mode=ask
+    codex_insert_index=0
+    for (( index = 0; index < ${#arguments[@]}; index++ )); do
+        argument="${arguments[index]}"
+        if (( skip_value )); then
+            skip_value=0
+            continue
+        fi
+        config_key=''
+        case "$argument" in
+            --) break ;;
+            -h|--help|-V|--version)
+                codex_mode=none
+                return 0
+                ;;
+            -s|-s?*|--sandbox|--sandbox=*|-a|-a?*|--ask-for-approval|--ask-for-approval=*|-p|-p?*|--profile|--profile=*|--approve-for-me|--dangerously-bypass-approvals-and-sandbox|--full-auto|--yolo)
+                codex_mode=own
+                return 0
+                ;;
+            -c|--config)
+                config_key="${arguments[index + 1]:-}"
+                skip_value=1
+                ;;
+            -c?*) config_key="${argument#-c}" ;;
+            --config=*) config_key="${argument#--config=}" ;;
+            -m|--model|-i|--image|-C|--cd|--add-dir|--enable|--disable|--remote|--remote-auth-token-env|--local-provider) skip_value=1 ;;
+            -*) ;;
+            *) (( command_index >= 0 )) || command_index=$index ;;
+        esac
+        config_key="${config_key%%=*}"
+        case "${config_key//[[:space:]]/}" in
+            sandbox_mode|approval_policy|approval_policy.*|default_permissions|permissions|permissions.*|profile)
+                codex_mode=own
+                return 0
+                ;;
+        esac
+    done
+    (( command_index >= 0 )) || return 0
+    case "${arguments[command_index]}" in
+        resume|fork) codex_insert_index=$((command_index + 1)) ;;
+        exec|e|review) codex_mode=warn ;;
+        agents|login|logout|mcp|mcp-server|plugin|app-server|remote-control|completion|update|doctor|sandbox|debug|apply|a|queue|archive|delete|migrate-rollouts|unarchive|cloud|exec-server|features|help) codex_mode=none ;;
+    esac
+}
+
 run_maintenance() {
     local status=0
     prepare_maintenance
@@ -215,7 +445,7 @@ if [[ "$launcher_name" == ia ]]; then
             exit 0
         fi
         while true; do
-            printf '\nTermux AI\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (experimental)\n4. Terminal Linux\n5. Google Antigravity CLI\n6. OpenCode (experimental)\n7. Ver versoes dos agentes\n8. Atualizar agentes\n0. Sair\n\n'
+            printf '\nTermux AI\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (experimental)\n4. Terminal Linux\n5. Google Antigravity CLI\n6. OpenCode (experimental)\n7. Ver versoes dos agentes\n8. Atualizar agentes\n9. Diagnostico do ambiente\n0. Sair\n\n'
             if ! read -r -p 'Escolha: ' selection; then
                 exit 0
             fi
@@ -228,6 +458,7 @@ if [[ "$launcher_name" == ia ]]; then
                 6) tool_name=opencode ;;
                 7) run_maintenance show_versions || true; continue ;;
                 8) run_maintenance update_agents || true; continue ;;
+                9) run_maintenance show_diagnostics || true; continue ;;
                 0) exit 0 ;;
                 *) printf '%s\n' 'Opcao invalida.' >&2; exit 2 ;;
             esac
@@ -245,6 +476,11 @@ if [[ "$launcher_name" == ia ]]; then
         shift
         status=0
         run_maintenance update_agents "$@" || status=$?
+        exit "$status"
+    elif [[ "$1" == diagnostico ]]; then
+        shift
+        status=0
+        run_maintenance show_diagnostics "$@" || status=$?
         exit "$status"
     else
         tool_name="$1"
@@ -271,6 +507,23 @@ fi
 
 require_proot_distro
 load_linux_config
+
+if [[ $tool_name == codex ]]; then
+    classify_codex_args "$@"
+    case "$codex_mode" in
+        ask)
+            printf '%s\n' \
+                'Codex: o sandbox nao funciona no Android/PRoot.' \
+                'Modo Pedir aprovacao: confirme cada comando ou edicao. Detalhes: ia diagnostico' >&2
+            set -- "${@:1:codex_insert_index}" -s workspace-write -a on-request "${@:codex_insert_index+1}"
+            ;;
+        warn)
+            printf '%s\n' \
+                'Codex: sem sandbox no Android/PRoot, os comandos do agente falham em exec e review.' \
+                'Prefira ia codex, que abre no modo Pedir aprovacao. Detalhes: ia diagnostico' >&2
+            ;;
+    esac
+fi
 
 exec proot-distro "${login_args[@]}" --work-dir "$PWD" -- \
     /bin/bash -lc 'export TERMUX_AI_GUEST=1; export PATH="$HOME/.local/bin:$PATH"; exec "$@"' \

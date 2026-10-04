@@ -284,4 +284,6 @@ else
         'Abra uma nova sessao Bash ou execute ia. Use 0 no menu para chegar ao shell.' \
         'Faltam seus logins e os testes com modelos. Nenhuma credencial foi solicitada.'
 fi
-printf '%s\n' 'O sandbox do Codex nao foi desativado. Nenhuma conexao SSH/ADB foi criada.'
+printf '%s\n' \
+    'Codex sem sandbox no Android: ia codex abre no modo Pedir aprovacao.' \
+    'Use ia diagnostico para conferir logins e protecoes. Nenhuma conexao SSH/ADB foi criada.'

@@ -11,7 +11,7 @@ GitHub Copilot &middot; Claude Code &middot; Codex &middot; Antigravity &middot;
 ![Arquiteturas de 64 bits](https://img.shields.io/badge/64_bits-ARM64_%7C_x86__64-0969DA)
 [![Testado no Android](https://img.shields.io/badge/Testado-no_Android-198754)](#compatibilidade)
 
-[Instalar](#instalacao) &middot; [Primeiro uso](#primeiro-uso) &middot; [Na tela](#na-tela) &middot; [Atualizar](#atualizar) &middot; [Compatibilidade](#compatibilidade) &middot; [Ajuda](#ajuda)
+[Instalar](#instalacao) &middot; [Primeiro uso](#primeiro-uso) &middot; [Na tela](#na-tela) &middot; [Atualizar](#atualizar) &middot; [Diagnostico](#diagnostico) &middot; [Compatibilidade](#compatibilidade) &middot; [Ajuda](#ajuda)
 
 </div>
 
@@ -23,7 +23,7 @@ Escolha seu agente, abra um projeto e continue de onde estiver.
 sem depender de um PC no uso diario.
 
 <p align="center">
-    <img src="docs/images/menu-android.png" width="760" alt="Menu do AI Termux Android com os cinco agentes e o terminal Linux">
+    <img src="docs/images/menu-android.png" width="760" alt="Menu do AI Termux Android com os cinco agentes, o terminal Linux, versoes, atualizacao e diagnostico">
     <br>
     <sub>Abra com ia. Escolha pelo numero. Comece no seu projeto.</sub>
 </p>
@@ -97,7 +97,8 @@ ia
 
 O menu tambem aparece em novas sessoes **Bash** do Termux. Escolha o numero do
 agente e pressione Enter. As opcoes `7` e `8` consultam e atualizam as versoes
-dos agentes. Use `0` para voltar ao shell.
+dos agentes, e a `9` faz o [diagnostico](#diagnostico) do ambiente. Use `0`
+para voltar ao shell.
 
 <details>
 <summary>Opcoes de instalacao</summary>
@@ -132,6 +133,11 @@ terminal. As contas de outros agentes **nao sao copiadas automaticamente**.
 Se o navegador nao abrir, use o link exibido pelo agente. Planos, limites e
 cobranca dependem de cada provedor; este projeto nao fornece assinaturas ou
 creditos. No OpenCode, `opencode models` lista os modelos disponiveis.
+
+**OpenCode sem chave de API:** em `opencode auth login`, escolha **GitHub
+Copilot** para entrar com a assinatura do Copilot por codigo de dispositivo,
+ou **OpenAI** e depois **ChatGPT Plus/Pro** para usar a assinatura do ChatGPT.
+Depois de conectar as contas, confira tudo com `ia diagnostico`.
 
 **Abra o agente dentro da pasta em que deseja trabalhar:**
 
@@ -173,7 +179,8 @@ CLI, incluindo conta Claude ou Anthropic Console para uso de API.
 <summary>Codex</summary>
 
 **Opcao 3 no menu** ou `codex`. A tela de boas-vindas oferece conexao com
-ChatGPT, codigo de dispositivo ou sua propria chave de API.
+ChatGPT, codigo de dispositivo ou sua propria chave de API. No Android, o
+Codex abre no modo **Pedir aprovacao**; veja [Codex no Android](#codex-no-android).
 
 ![Codex com as opcoes de conexao antes do login](docs/images/codex-entry.png)
 
@@ -212,6 +219,42 @@ de autenticacao antes de inserir qualquer credencial.
 atualizacoes dos fornecedores.</sub>
 
 </details>
+
+### Codex no Android
+
+**O sandbox do Codex nao funciona no Android.** O Android nao oferece Landlock,
+e o bubblewrap usado pelo Codex nao consegue montar o isolamento no PRoot. No
+modo padrao do Codex, os comandos do agente falham sem pedir aprovacao.
+
+Por isso, `codex`, `ia codex` e a opcao 3 do menu abrem o Codex no modo
+**Pedir aprovacao** (`-s workspace-write -a on-request`), com um aviso curto.
+Cada comando ou edicao pede sua confirmacao: aprovar executa a acao fora do
+sandbox; recusar a bloqueia.
+
+| Ao abrir o Codex | O que acontece |
+| --- | --- |
+| `codex`, `codex resume` ou `codex fork` | Abre no modo Pedir aprovacao |
+| Com uma opcao de permissao, como `-s`, `-a`, `-p` ou `--full-auto` | Usa o modo informado, sem alteracao |
+| `codex exec` ou `codex review` | Mostra um aviso: sem o sandbox, os comandos do agente falham |
+| `codex login`, `codex --help` e os demais subcomandos | Executa sem alteracao |
+
+Revise cada pedido antes de aprovar e mantenha os projetos no Git ou com
+backup. O [diagnostico](#diagnostico) testa o sandbox do Codex e avisa se uma
+versao futura passar a inicia-lo sem bloquear gravacoes; nesse caso, comandos
+poderiam rodar sem aprovacao.
+
+O Codex tambem inicia um servidor local em segundo plano. Ao fechar o Codex
+aberto pelo menu ou por `ia codex`, o PRoot-Distro encerra os processos do
+Linux, inclusive esse servidor. Por isso, a mensagem "Any running work
+continues", exibida ao sair, nao vale aqui: espere a tarefa terminar antes de
+sair e use `ia codex resume` para retomar a conversa.
+
+Esse servidor e um pacote separado, que o npm e o `ia atualizar` nao trocam.
+Depois de atualizar o Codex, ele pode avisar que o servico em segundo plano e
+mais antigo que o CLI. O aviso nao impede o uso; para atualizar o servico,
+digite `/daemon` no Codex, como o proprio aviso indica. Os avisos sobre
+bubblewrap tambem sao esperados: instala-lo nao resolve, porque no PRoot ele
+nao isola de verdade.
 
 ## Como funciona
 
@@ -254,7 +297,9 @@ instalacao. As opcoes `7` e `8` do menu fazem o mesmo.
 
 Feche os agentes antes de atualizar. Cada atualizacao reaproveita o local em
 que o agente ja esta instalado: prefixo npm, instalador nativo do Claude Code
-ou binario do Antigravity. Contas e conversas sao mantidas.
+ou binario do Antigravity. Contas e conversas sao mantidas. Depois de atualizar
+o Codex, ele pode avisar que o servico em segundo plano esta desatualizado;
+veja [Codex no Android](#codex-no-android).
 
 Para atualizar o menu e os scripts deste projeto, saia dos agentes e execute:
 
@@ -292,6 +337,30 @@ dominio do pacote, a versao anunciada e o SHA-512 antes de instalar o binario.
 O configurador de aliases e perfis do Antigravity nao e executado.
 
 </details>
+
+## Diagnostico
+
+**Confira o ambiente, os agentes e os logins com um comando no Termux:**
+
+```sh
+ia diagnostico
+```
+
+Execute na pasta do projeto; a opcao `9` do menu faz o mesmo. O diagnostico
+nao chama modelos nem altera seus arquivos e termina com os proximos passos,
+como o comando de login de um agente desconectado.
+
+| Parte | O que verifica |
+| --- | --- |
+| Termux | Versoes do Android, Termux e PRoot-Distro, espaco livre e o Linux em uso |
+| Linux | Sistema, Node.js 22+, Git, acesso a internet e gravacao na pasta atual |
+| Agentes | Versao e login de cada agente, sem exibir contas, emails ou tokens |
+| Protecao | Se o sandbox do Codex funciona e os limites de isolamento do PRoot |
+
+O login e lido do estado local de cada CLI: `codex login status`,
+`claude auth status`, a configuracao do Copilot, `opencode auth list` e o token
+do Antigravity. Um token do Copilot em variavel de ambiente tambem conta como
+login. Inclua a saida do diagnostico ao [relatar um problema](#ajuda).
 
 ## Instalacoes existentes
 
@@ -399,7 +468,7 @@ Autenticar nao garante que toda ferramenta ou sandbox funcione no PRoot.
 <details>
 <summary>Limites conhecidos e solucao de problemas</summary>
 
-- **Codex:** a execucao protegida de comandos pode falhar no PRoot com `Sandbox(LandlockRestrict)`. O instalador nao desativa o sandbox.
+- **Codex:** o sandbox nao funciona no PRoot. O menu e o atalho `codex` abrem o Codex no modo Pedir aprovacao; `codex exec` e `codex review` nao conseguem executar comandos. Veja [Codex no Android](#codex-no-android).
 - **OpenCode:** o login foi confirmado; ferramentas, plugins e tarefas dependem do provedor e das permissoes. O menu ainda usa a marcacao experimental para essa integracao.
 - **Antigravity:** o login Linux pode depender de Secret Service/D-Bus; persistencia de credenciais nao e garantida em todas as configuracoes PRoot.
 - **Arquitetura:** um processador de 64 bits com Termux de 32 bits nao atende aos requisitos.
@@ -442,9 +511,10 @@ assinatura em um servico nao conecta nem libera automaticamente os outros.
 </details>
 
 **Encontrou um problema?** [Abra uma issue](https://github.com/micheljatuba/AI-Termux-Android/issues/new)
-com a versao do Android e do Termux, arquitetura, comando executado e a mensagem
-de erro. Remova tokens, emails, caminhos pessoais e outros dados privados antes
-de enviar logs ou capturas. Informe se e uma instalacao nova ou uma atualizacao.
+com a saida de `ia diagnostico`, o comando executado e a mensagem de erro. Se a
+instalacao nao terminou, informe a versao do Android e do Termux e a arquitetura.
+Remova tokens, emails, caminhos pessoais e outros dados privados antes de enviar
+logs ou capturas. Informe se e uma instalacao nova ou uma atualizacao.
 
 ## Seguranca e backups
 
@@ -454,7 +524,9 @@ de enviar logs ou capturas. Informe se e uma instalacao nova ou uma atualizacao.
 
 O instalador nao desativa sandboxes, nao habilita aprovacao irrestrita, nao
 configura compartilhamento automatico de sessoes e nao abre acesso SSH/ADB.
-As permissoes dos agentes permanecem nos padroes de cada fornecedor.
+As permissoes dos agentes seguem os padroes de cada fornecedor. A excecao e o
+Codex: sem sandbox no Android, ele abre no modo Pedir aprovacao, que confirma
+cada comando ou edicao.
 
 Digite chaves somente no prompt oficial do agente. Nao publique credenciais,
 logs privados ou backups. No OpenCode, as credenciais ficam em
@@ -494,7 +566,8 @@ shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/a
 
 A suite verifica argumentos, conflitos, preservacao de configuracoes,
 repeticao da instalacao, validacao de downloads, consulta e atualizacao de
-versoes sem rebaixamento, adocao do Ubuntu manual e atualizacao do menu Ubuntu.
+versoes sem rebaixamento, adocao do Ubuntu manual, atualizacao do menu Ubuntu,
+diagnostico do ambiente e o modo Pedir aprovacao do Codex.
 Execute-a em Linux; no Android, rode-a dentro do Linux do PRoot com `ia terminal`.
 Antes de anunciar suporte a uma nova configuracao Android, teste instalacao,
 login e uma tarefa controlada em cada agente, sem publicar dados pessoais.
