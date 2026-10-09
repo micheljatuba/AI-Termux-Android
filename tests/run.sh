@@ -10,6 +10,7 @@ export HOME="$test_root/launcher-home"
 export TERMUX_AI_TEST_ARGS="$test_root/arguments"
 export TERMUX_AI_TEST_STAGE_INPUT="$test_root/stage-input"
 export TERMUX_AI_TEST_STAGE_VERBOSE="$test_root/stage-verbose"
+export TERMUX_AI_TEST_CALLS="$test_root/proot-calls"
 export TERMUX_AI_TEST_VERSIONS="$test_root/versions.txt"
 export TERMUX_AI_TEST_DIAG="$test_root/diagnostics.txt"
 export TERMUX_AI_TEST_UPDATES="$test_root/updates.log"
@@ -18,6 +19,8 @@ unset TERMUX_AI_GUEST PROOT_VERBOSE
 
 cat > "$test_root/bin/proot-distro" <<'MOCK'
 #!/usr/bin/env bash
+printf '%q ' "$@" >> "$TERMUX_AI_TEST_CALLS"
+printf '\n' >> "$TERMUX_AI_TEST_CALLS"
 printf '%s\0' "$@" > "$TERMUX_AI_TEST_ARGS"
 arguments=("$@")
 for index in "${!arguments[@]}"; do
@@ -77,13 +80,15 @@ assert_equal "${actual_args[14]}" '"quoted"' 'preserves quotes'
 assert_equal "${actual_args[15]}" '' 'preserves empty arguments'
 printf '%s\n' 'PASS launcher argument transport'
 
-for tool_name in codex copilot claude antigravity agy opencode; do
+for tool_name in codex copilot claude antigravity agy opencode embeddinggemma embedding; do
     cp "$project_root/bin/ia" "$test_root/bin/$tool_name"
     bash "$test_root/bin/$tool_name" --version
     mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
     expected_tool="$tool_name"
     if [[ "$tool_name" == antigravity ]]; then
         expected_tool=agy
+    elif [[ "$tool_name" == embedding ]]; then
+        expected_tool=embeddinggemma
     fi
     assert_equal "${actual_args[11]}" "$expected_tool" "dispatches $tool_name shortcut"
     assert_equal "${actual_args[12]}" --version 'preserves shortcut arguments'
@@ -123,6 +128,9 @@ printf '%s\n' 'PASS terminal dispatch'
 
 launcher_state="$HOME/.local/share/termux-ai"
 mkdir -p "$launcher_state"
+mkdir -p "$launcher_state/web" "$launcher_state/tools"
+touch "$launcher_state/webui.sh" "$launcher_state/web/menu.sh" "$launcher_state/tools/embeddinggemma_web.py"
+cp "$setup_script" "$launcher_state/setup-linux.sh"
 printf 'name=ubuntu\nuser=root\n' > "$launcher_state/linux.conf"
 bash "$project_root/bin/ia" claude 'two words'
 mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
@@ -146,6 +154,53 @@ for invalid_config in $'name=../other\nuser=root' $'name=ubuntu\nuser=root;id' '
 done
 rm "$launcher_state/linux.conf"
 printf '%s\n' 'PASS Linux selection from the installer configuration'
+
+printf 'name=ubuntu\nuser=root\n' > "$launcher_state/linux.conf"
+bash "$project_root/bin/ia" web status embedding
+mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+assert_equal "${actual_args[2]}" --work-dir 'preserves the current directory for the WebUI'
+assert_equal "${actual_args[4]}" --no-kill-on-exit 'keeps web services alive when the PRoot session ends'
+assert_equal "${actual_args[6]}" /bin/bash 'runs the web service controller inside Linux'
+assert_equal "${actual_args[9]}" status 'requests WebUI status'
+assert_equal "${actual_args[10]}" embedding 'limits status to EmbeddingGemma'
+assert_equal "$(< "$TERMUX_AI_TEST_STAGE_VERBOSE")" '-1' 'keeps PRoot startup quiet for WebUI'
+bash "$project_root/bin/ia" web > "$test_root/web-start.log"
+mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+assert_equal "${actual_args[9]}" start 'starts both WebUI services by default'
+assert_equal "${actual_args[10]}" both 'starts terminal and EmbeddingGemma by default'
+grep -Fq 'http://127.0.0.1:7680' "$test_root/web-start.log"
+grep -Fq 'http://127.0.0.1:8085' "$test_root/web-start.log"
+expect_failure 'WebUI ran inside the Linux guest' env TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" web status
+grep -q 'Use ia web no Termux' "$test_root/expected-failure.log"
+expect_failure 'unknown WebUI target was accepted' bash "$project_root/bin/ia" web start network
+grep -q 'Uso: ia web' "$test_root/expected-failure.log"
+rm "$launcher_state/linux.conf"
+printf '%s\n' 'PASS local WebUI dispatch, service management and loopback links'
+
+printf 'name=ubuntu\nuser=root\n' > "$launcher_state/linux.conf"
+: > "$TERMUX_AI_TEST_CALLS"
+bash "$project_root/bin/ia" embeddinggemma install > "$test_root/embedding-install.log"
+mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+assert_equal "${actual_args[*]}" 'login ubuntu -- /bin/bash -se -- embeddinggemma-install' 'installs optional dependencies as the Linux user'
+grep -Fq 'login ubuntu -- /bin/bash -se -- embeddinggemma-system' "$TERMUX_AI_TEST_CALLS"
+grep -Fq 'login ubuntu -- /bin/bash -se -- embeddinggemma-install' "$TERMUX_AI_TEST_CALLS"
+grep -q 'dependencias opcionais' "$test_root/embedding-install.log"
+expect_failure 'EmbeddingGemma installation ran inside Linux' env TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" embeddinggemma install
+grep -q 'fora do Linux' "$test_root/expected-failure.log"
+expect_failure 'EmbeddingGemma installation accepted extra arguments' bash "$project_root/bin/ia" embeddinggemma install extra
+grep -q 'Uso: ia embeddinggemma install' "$test_root/expected-failure.log"
+rm "$launcher_state/linux.conf"
+printf '%s\n' 'PASS optional EmbeddingGemma install stages and argument guards'
+
+assets_home="$test_root/assets-home"
+mkdir -p "$assets_home"
+HOME="$assets_home" bash "$setup_script" install-assets "$project_root"
+cmp "$assets_home/.local/share/termux-ai/web/menu.sh" "$project_root/scripts/web-menu.sh"
+cmp "$assets_home/.local/share/termux-ai/tools/embeddinggemma_cli.py" "$project_root/scripts/embeddinggemma_cli.py"
+cmp "$assets_home/.local/share/termux-ai/tools/embeddinggemma_web.py" "$project_root/scripts/embeddinggemma_web.py"
+cmp "$assets_home/.local/bin/embeddinggemma" "$project_root/scripts/embeddinggemma-launcher.sh"
+assert_equal "$(readlink "$assets_home/.local/bin/embedding")" embeddinggemma 'installs the guest compatibility link'
+printf '%s\n' 'PASS Linux guest assets and optional command installation'
 
 for tool_name in claude antigravity agy opencode; do
     if TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" "$tool_name" > "$test_root/nested.log" 2>&1; then
@@ -595,15 +650,21 @@ printf 'export ORIGINAL_SETTING=kept\n' > "$test_root/bashrc.expected"
 cmp "$state_dir/bashrc.before" "$test_root/bashrc.expected"
 assert_equal "$(< "$state_dir/linux.conf")" $'name=termux-ai\nuser=node' 'records the managed Linux'
 cmp "$state_dir/setup-linux.sh" "$setup_script"
+cmp "$state_dir/webui.sh" "$project_root/scripts/webui.sh"
+cmp "$state_dir/web/menu.sh" "$project_root/scripts/web-menu.sh"
+cmp "$state_dir/tools/embeddinggemma_web.py" "$project_root/scripts/embeddinggemma_web.py"
+cmp "$state_dir/tools/embeddinggemma_cli.py" "$project_root/scripts/embeddinggemma_cli.py"
 grep -Fqx 'Codex sem sandbox no Android: ia codex abre no modo Pedir aprovacao.' "$test_root/first-install.log"
 grep -Fq 'Use ia diagnostico para conferir logins e protecoes.' "$test_root/first-install.log"
 grep -Fqx 'proot login termux-ai -- /bin/bash -se -- system' "$TERMUX_AI_TEST_INSTALL_LOG"
 grep -Fqx 'proot login termux-ai --user node -- /bin/bash -se -- agents' "$TERMUX_AI_TEST_INSTALL_LOG"
+grep -Fqx "proot login termux-ai --user node -- /bin/bash -se -- install-assets $project_root" "$TERMUX_AI_TEST_INSTALL_LOG"
 bash "$project_root/install.sh" --yes > "$test_root/reinstall.log"
 assert_equal "$(grep -c '^proot install ' "$TERMUX_AI_TEST_INSTALL_LOG")" 1 'does not reinstall the Linux image'
+assert_equal "$(grep -c 'install-assets' "$TERMUX_AI_TEST_INSTALL_LOG")" 2 'refreshes guest assets on reinstall'
 assert_equal "$(grep -c 'menu.bash' "$HOME/.bashrc")" 1 'does not duplicate the startup hook'
 assert_equal "$(< "$PREFIX/var/lib/proot-distro/containers/ubuntu/rootfs/project")" 'keep this project' 'preserves other Linux data'
-for tool_name in ia codex copilot claude antigravity agy opencode; do
+for tool_name in ia codex copilot claude antigravity agy opencode embeddinggemma embedding; do
     test -x "$PREFIX/bin/$tool_name"
     cmp "$PREFIX/bin/$tool_name" "$state_dir/bin/ia"
 done
@@ -613,7 +674,7 @@ printf '%s\n' 'PASS mock installation, managed rerun and preserved configuration
 expect_failure 'adoption replaced the managed Linux' bash "$project_root/install.sh" --yes --adopt-ubuntu
 grep -q 'usa o Linux termux-ai' "$test_root/expected-failure.log"
 assert_equal "$(< "$state_dir/linux.conf")" $'name=termux-ai\nuser=node' 'keeps the managed Linux selected'
-for tool_name in ia codex copilot claude antigravity agy opencode; do
+for tool_name in ia codex copilot claude antigravity agy opencode embeddinggemma embedding; do
     cmp "$PREFIX/bin/$tool_name" "$state_dir/bin/ia"
 done
 printf '%s\n' 'PASS managed installation refuses Ubuntu adoption'
@@ -1356,7 +1417,11 @@ grep -Fqx 'proot login ubuntu -- /bin/bash -se -- system' "$TERMUX_AI_TEST_INSTA
 grep -Fqx 'proot login ubuntu -- /bin/bash -se -- agents --root' "$TERMUX_AI_TEST_INSTALL_LOG"
 assert_equal "$(< "$state_dir/linux.conf")" $'name=ubuntu\nuser=root' 'records the adopted Ubuntu'
 cmp "$state_dir/setup-linux.sh" "$setup_script"
-for tool_name in ia codex copilot claude antigravity agy opencode; do
+cmp "$state_dir/webui.sh" "$project_root/scripts/webui.sh"
+cmp "$state_dir/web/menu.sh" "$project_root/scripts/web-menu.sh"
+cmp "$state_dir/tools/embeddinggemma_web.py" "$project_root/scripts/embeddinggemma_web.py"
+cmp "$state_dir/tools/embeddinggemma_cli.py" "$project_root/scripts/embeddinggemma_cli.py"
+for tool_name in ia codex copilot claude antigravity agy opencode embeddinggemma embedding; do
     [[ -f "$PREFIX/bin/$tool_name" && ! -L "$PREFIX/bin/$tool_name" ]] || fail_test "$tool_name is not a managed command"
     cmp "$PREFIX/bin/$tool_name" "$state_dir/bin/ia"
 done
@@ -1385,7 +1450,7 @@ cmp "$HOME/.bashrc" "$test_root/adopt-bashrc.installed"
 assert_equal "$(< "$state_dir/linux.conf")" $'name=ubuntu\nuser=root' 'keeps the adopted Ubuntu selected'
 cmp "$state_dir/adopted/bin/ia" "$test_root/ubuntu-launcher.before"
 cmp "$state_dir/adopted/bin/opencode" "$test_root/ubuntu-launcher.before"
-for tool_name in ia codex copilot claude antigravity agy opencode; do
+for tool_name in ia codex copilot claude antigravity agy opencode embeddinggemma embedding; do
     cmp "$PREFIX/bin/$tool_name" "$state_dir/bin/ia"
 done
 expect_failure 'OpenCode menu patch changed an adopted installation' bash "$project_root/scripts/add-opencode-ubuntu.sh" --yes
@@ -1445,11 +1510,20 @@ test -f "$test_root/home/.local/share/termux-ai/container.managed"
 cmp "$test_root/prefix/bin/ia" "$test_root/home/.local/share/termux-ai/bin/ia"
 printf '%s\n' 'PASS adoption undo from the README restores the manual setup and repeats safely'
 
-for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/add-opencode-ubuntu.sh tests/run.sh; do
-    bash -n "$project_root/$relative_path"
+for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma-launcher.sh scripts/add-opencode-ubuntu.sh tests/run.sh; do
+    if [[ $relative_path != *.py ]]; then
+        bash -n "$project_root/$relative_path"
+    fi
     if LC_ALL=C grep -q $'\r' "$project_root/$relative_path"; then
         printf 'FAIL: CRLF in %s\n' "$relative_path" >&2
         exit 1
     fi
 done
+PYTHONPYCACHEPREFIX="$test_root/pycache" python3 -m py_compile "$project_root/scripts/embeddinggemma_web.py"
+PYTHONPYCACHEPREFIX="$test_root/pycache" python3 -m py_compile "$project_root/scripts/embeddinggemma_cli.py"
+python3 "$project_root/scripts/embeddinggemma_cli.py" --version > "$test_root/embedding-version.log"
+assert_equal "$(< "$test_root/embedding-version.log")" 2.0.0 'runs the version command without loading model dependencies'
+expect_failure 'EmbeddingGemma server accepted a non-loopback host' python3 "$project_root/scripts/embeddinggemma_cli.py" serve --host 0.0.0.0
+grep -q 'invalid choice' "$test_root/expected-failure.log"
+grep -Fq 'codex -s workspace-write -a on-request' "$project_root/scripts/web-menu.sh"
 printf '%s\n' 'PASS shell syntax and Linux line endings'

@@ -7,18 +7,22 @@ safe_text_pattern='^[A-Za-z0-9 ._()/+:-]{1,60}$'
 
 show_help() {
     printf '%s\n' \
-        'Uso: ia [copilot|claude|codex|antigravity|agy|opencode|terminal] [argumentos]' \
+        'Uso: ia [copilot|claude|codex|antigravity|agy|opencode|embeddinggemma|terminal] [argumentos]' \
         '     ia versoes' \
         '     ia atualizar [--yes] [agente...]' \
         '     ia diagnostico' \
+        '     ia web [start|stop|status] [terminal|embedding]' \
+        '     ia embeddinggemma install' \
         'Sem argumentos, abre o menu em uma sessao interativa.' \
         'versoes: compara as versoes instaladas com as mais recentes.' \
         'atualizar: mostra o plano e atualiza os agentes apos confirmacao.' \
         'diagnostico: verifica Linux, agentes, logins e protecoes.' \
+        'web: abre o terminal Linux com menu e o EmbeddingGemma 2 no navegador, so em 127.0.0.1.' \
         'Codex: sem sandbox no Android/PRoot; abre no modo Pedir aprovacao.' \
         '       Para escolher outro modo, informe -s/--sandbox ou -a/--ask-for-approval.' \
         'Antigravity CLI: comandos antigravity ou agy.' \
-        'OpenCode: integracao experimental, sem validacao em Android/PRoot.'
+        'OpenCode: integracao experimental, sem validacao em Android/PRoot.' \
+        'EmbeddingGemma 2: embeddings locais e opcionais via embeddinggemma ou embedding.'
 }
 
 display_name() {
@@ -28,6 +32,7 @@ display_name() {
         codex) printf '%s' 'Codex' ;;
         agy) printf '%s' 'Antigravity CLI' ;;
         opencode) printf '%s' 'OpenCode' ;;
+        embeddinggemma|embedding) printf '%s' 'EmbeddingGemma 2' ;;
     esac
 }
 
@@ -76,6 +81,22 @@ run_linux_stage() {
         return 1
     fi
     PROOT_VERBOSE=-1 proot-distro "${login_args[@]}" -- /bin/bash -se -- "$@" < "$state_dir/setup-linux.sh"
+}
+
+install_embeddinggemma() {
+    if (( $# > 0 )); then
+        printf '%s\n' 'Uso: ia embeddinggemma install' >&2
+        return 2
+    fi
+    prepare_maintenance
+    if [[ ! -f "$state_dir/setup-linux.sh" ]]; then
+        printf '%s\n' 'Componentes de instalacao ausentes. Execute novamente bash install.sh pelo Termux.' >&2
+        return 1
+    fi
+    printf '%s\n' 'Instalando Python e as dependencias opcionais do EmbeddingGemma no Linux.'
+    PROOT_VERBOSE=-1 proot-distro login "$linux_name" -- /bin/bash -se -- embeddinggemma-system < "$state_dir/setup-linux.sh" \
+        || return
+    run_linux_stage embeddinggemma-install
 }
 
 read_versions() {
@@ -437,6 +458,43 @@ run_maintenance() {
     return "$status"
 }
 
+run_web_stage() {
+    if [[ ${TERMUX_AI_GUEST:-} == 1 ]]; then
+        printf '%s\n' 'Use ia web no Termux, fora do Linux.' >&2
+        return 1
+    fi
+    require_proot_distro
+    load_linux_config
+    if [[ ! -f "$state_dir/webui.sh" || ! -f "$state_dir/web/menu.sh" || ! -f "$state_dir/tools/embeddinggemma_web.py" ]]; then
+        printf '%s\n' 'Arquivos da WebUI ausentes. Atualize o repositorio e execute bash install.sh no Termux.' >&2
+        return 1
+    fi
+    local action="$1" target="$2"
+    PROOT_VERBOSE=-1 proot-distro "${login_args[@]}" --work-dir "$PWD" --no-kill-on-exit -- \
+        /bin/bash -se -- "$action" "$target" < "$state_dir/webui.sh"
+}
+
+manage_web() {
+    local action="${1:-start}" target="${2:-both}"
+    if (( $# > 2 )); then
+        printf '%s\n' 'Uso: ia web [start|stop|status] [terminal|embedding]' >&2
+        return 2
+    fi
+    case "$action:$target" in
+        start:both|start:terminal|start:embedding|stop:both|stop:terminal|stop:embedding|status:both|status:terminal|status:embedding) ;;
+        *)
+            printf '%s\n' 'Uso: ia web [start|stop|status] [terminal|embedding]' >&2
+            return 2
+            ;;
+    esac
+    run_web_stage "$action" "$target" || return
+    if [[ $action == start ]]; then
+        [[ $target == embedding ]] || printf '%s\n' 'Terminal: http://127.0.0.1:7680'
+        [[ $target == terminal ]] || printf '%s\n' 'EmbeddingGemma: http://127.0.0.1:8085'
+        printf '%s\n' 'Acesso restrito a este aparelho (127.0.0.1). Para encerrar: ia web stop'
+    fi
+}
+
 launcher_name="${0##*/}"
 if [[ "$launcher_name" == ia ]]; then
     if [[ $# -eq 0 ]]; then
@@ -445,7 +503,7 @@ if [[ "$launcher_name" == ia ]]; then
             exit 0
         fi
         while true; do
-            printf '\nTermux AI\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (experimental)\n4. Terminal Linux\n5. Google Antigravity CLI\n6. OpenCode (experimental)\n7. Ver versoes dos agentes\n8. Atualizar agentes\n9. Diagnostico do ambiente\n0. Sair\n\n'
+            printf '\nTermux AI\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (experimental)\n4. Terminal Linux\n5. Google Antigravity CLI\n6. OpenCode (experimental)\n7. EmbeddingGemma 2 (local, opcional)\n8. Versoes e atualizacoes dos agentes\n9. Diagnostico do ambiente\n0. Sair\n\n'
             if ! read -r -p 'Escolha: ' selection; then
                 exit 0
             fi
@@ -456,7 +514,7 @@ if [[ "$launcher_name" == ia ]]; then
                 4) tool_name=terminal ;;
                 5) tool_name=agy ;;
                 6) tool_name=opencode ;;
-                7) run_maintenance show_versions || true; continue ;;
+                7) tool_name=embeddinggemma ;;
                 8) run_maintenance update_agents || true; continue ;;
                 9) run_maintenance show_diagnostics || true; continue ;;
                 0) exit 0 ;;
@@ -482,6 +540,16 @@ if [[ "$launcher_name" == ia ]]; then
         status=0
         run_maintenance show_diagnostics "$@" || status=$?
         exit "$status"
+    elif [[ "$1" == web ]]; then
+        shift
+        status=0
+        manage_web "$@" || status=$?
+        exit "$status"
+    elif { [[ "$1" == embeddinggemma || "$1" == embedding ]] && [[ ${2:-} == install ]]; }; then
+        shift 2
+        status=0
+        install_embeddinggemma "$@" || status=$?
+        exit "$status"
     else
         tool_name="$1"
         shift
@@ -493,6 +561,7 @@ fi
 case "$tool_name" in
     codex|copilot|claude|opencode) ;;
     antigravity|agy) tool_name=agy ;;
+    embeddinggemma|embedding) tool_name=embeddinggemma ;;
     terminal|linux|ubuntu)
         tool_name=/bin/bash
         set -- -l "$@"
@@ -501,7 +570,11 @@ case "$tool_name" in
 esac
 
 if [[ ${TERMUX_AI_GUEST:-} == 1 ]]; then
-    printf '%s\n' 'O agente nao foi encontrado dentro do Linux. Execute novamente o instalador pelo Termux.' >&2
+    if [[ $tool_name == embeddinggemma ]]; then
+        printf '%s\n' 'EmbeddingGemma 2 nao esta instalado no Linux. Ele e opcional: veja a secao EmbeddingGemma 2 do README.' >&2
+    else
+        printf '%s\n' 'O agente nao foi encontrado dentro do Linux. Execute novamente o instalador pelo Termux.' >&2
+    fi
     exit 1
 fi
 

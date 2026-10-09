@@ -88,7 +88,7 @@ distro_dir="${TERMUX__PREFIX:-$PREFIX}/var/lib/proot-distro"
 container_dir="$distro_dir/containers/termux-ai"
 legacy_dir="$distro_dir/installed-rootfs/termux-ai"
 owner_id='termux-ai-installer-v1'
-tool_names=(ia codex copilot claude antigravity agy opencode)
+tool_names=(ia codex copilot claude antigravity agy opencode embeddinggemma embedding)
 linux_name=termux-ai
 linux_user=node
 if [[ -e "$state_dir" || -L "$state_dir" ]]; then
@@ -163,7 +163,7 @@ if (( enable_menu )) && [[ -e "$HOME/.bashrc" || -L "$HOME/.bashrc" ]]; then
         fail 'A configuracao Bash ja abre o menu ia; remova essa chamada ou use --no-menu.'
     fi
 fi
-for relative_path in bin/ia scripts/setup-linux.sh scripts/menu.bash; do
+for relative_path in bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma-launcher.sh; do
     [[ -f "$project_root/$relative_path" ]] || fail 'Baixe o repositorio completo antes de executar install.sh.'
     if LC_ALL=C grep -q $'\r' "$project_root/$relative_path"; then
         fail "O arquivo $relative_path precisa de finais de linha LF."
@@ -222,6 +222,13 @@ else
 fi
 proot-distro login "$linux_name" -- /bin/bash -se -- system < "$project_root/scripts/setup-linux.sh"
 proot-distro "${agent_login[@]}" -- /bin/bash -se -- "${agent_stage[@]}" < "$project_root/scripts/setup-linux.sh"
+proot-distro "${agent_login[@]}" -- /bin/bash -se -- install-assets "$project_root" < "$project_root/scripts/setup-linux.sh"
+
+mkdir -p "$state_dir/tools" "$state_dir/web"
+install -m 644 "$project_root/scripts/embeddinggemma_cli.py" "$state_dir/tools/embeddinggemma_cli.py"
+install -m 644 "$project_root/scripts/embeddinggemma_web.py" "$state_dir/tools/embeddinggemma_web.py"
+install -m 644 "$project_root/scripts/webui.sh" "$state_dir/webui.sh"
+install -m 644 "$project_root/scripts/web-menu.sh" "$state_dir/web/menu.sh"
 
 if (( adopted )); then
     mkdir -p "$state_dir/adopted/bin"

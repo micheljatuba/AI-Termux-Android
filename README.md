@@ -96,9 +96,38 @@ ia
 ```
 
 O menu tambem aparece em novas sessoes **Bash** do Termux. Escolha o numero do
-agente e pressione Enter. As opcoes `7` e `8` consultam e atualizam as versoes
-dos agentes, e a `9` faz o [diagnostico](#diagnostico) do ambiente. Use `0`
-para voltar ao shell.
+agente e pressione Enter. A opcao `7` abre o EmbeddingGemma 2 local (opcional),
+`8` atualiza os agentes e `9` faz o [diagnostico](#diagnostico). Para consultar
+versoes, execute `ia versoes`. Use `0` para voltar ao shell.
+
+## Acesso pelo navegador
+
+No Termux, execute:
+
+```sh
+ia web
+```
+
+Isso inicia um terminal Linux com menu em `http://127.0.0.1:7680` e, quando o
+EmbeddingGemma opcional estiver instalado, sua interface em
+`http://127.0.0.1:8085`. O terminal permite abrir os agentes instalados e
+continuar em pastas do Ubuntu. Para iniciar ou consultar um servico apenas:
+`ia web start terminal`, `ia web start embedding` ou `ia web status`. Encerre
+com `ia web stop`.
+
+As duas interfaces escutam **somente em 127.0.0.1** e nao aceitam conexoes de
+outros aparelhos no Wi-Fi. Nao altere o endereco de escuta para `0.0.0.0`.
+O instalador inclui `ttyd` no Linux. Para habilitar o EmbeddingGemma, execute
+no Termux:
+
+```sh
+ia embeddinggemma install
+```
+
+Esse comando instala Python e as dependencias opcionais (`sentence-transformers`,
+`fastapi` e `uvicorn`) no Linux. Reserve alguns GiB; a primeira inferencia baixa
+o modelo (cerca de 1,5 GiB) e pode levar mais tempo. Busca de arquivos fica
+restrita a pasta atual de onde `ia web` foi iniciado.
 
 <details>
 <summary>Opcoes de instalacao</summary>
@@ -286,7 +315,7 @@ ia atualizar
 `ia versoes` compara a versao instalada de cada agente com a mais recente
 publicada no npm e no manifesto oficial do Antigravity. `ia atualizar` mostra
 o plano, pede confirmacao e verifica cada agente com `--version` depois da
-instalacao. As opcoes `7` e `8` do menu fazem o mesmo.
+instalacao. A opcao `8` do menu tambem atualiza os agentes.
 
 | Comando | O que faz |
 | --- | --- |
@@ -404,7 +433,7 @@ O `~/.bashrc` volta a versao anterior a adocao; o atual fica em
 s=~/.local/share/termux-ai
 if grep -qx 'name=ubuntu' "$s/linux.conf" 2>/dev/null; then
     ok=1
-    for t in ia codex copilot claude antigravity agy opencode; do
+    for t in ia codex copilot claude antigravity agy opencode embeddinggemma embedding; do
         f="$PREFIX/bin/$t"
         b="$s/adopted/bin/$t"
         if [ -f "$s/bin/ia" ] && [ ! -L "$f" ] && cmp -s "$f" "$s/bin/ia"; then
@@ -498,7 +527,8 @@ root, PC, cabo USB ou depuracao USB para instalar e usar os agentes.
 
 As CLIs e as ferramentas de desenvolvimento rodam no Android, dentro do Linux
 via PRoot. Os modelos dos provedores em nuvem dependem de internet e de uma
-conta. Este instalador nao baixa modelos para inferencia offline no aparelho.
+conta. O EmbeddingGemma 2 e opcional: depois de instalar suas dependencias,
+gera embeddings localmente; o modelo e baixado na primeira inferencia.
 
 </details>
 
@@ -531,6 +561,8 @@ cada comando ou edicao.
 Digite chaves somente no prompt oficial do agente. Nao publique credenciais,
 logs privados ou backups. No OpenCode, as credenciais ficam em
 `~/.local/share/opencode/auth.json`, dentro do Linux em que ele roda.
+O terminal web concede ao usuario da sessao os mesmos acessos que um shell
+Linux local; mantenha-o em `127.0.0.1` e encerre-o com `ia web stop` ao terminar.
 
 <details>
 <summary>Onde ficam os dados e como fazer backup</summary>
@@ -557,11 +589,13 @@ os dados do ambiente.
 
 ## Desenvolvimento
 
-Os testes exigem Bash, Node.js 22+ e utilitarios GNU, incluindo `tar` e `sha512sum`.
+Os testes exigem Bash, Python 3.10+, Node.js 22+ e utilitarios GNU, incluindo
+`tar` e `sha512sum`.
 
 ```sh
+python3 -m py_compile scripts/embeddinggemma_cli.py scripts/embeddinggemma_web.py
 bash tests/run.sh
-shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/add-opencode-ubuntu.sh scripts/menu.bash tests/run.sh
+shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/add-opencode-ubuntu.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma-launcher.sh tests/run.sh
 ```
 
 A suite verifica argumentos, conflitos, preservacao de configuracoes,

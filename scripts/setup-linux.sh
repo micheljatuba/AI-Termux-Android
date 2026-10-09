@@ -491,10 +491,17 @@ case "$stage" in
         [[ $(id -u) == 0 ]] || fail 'Esta etapa exige o root simulado do PRoot.'
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
-        apt-get install -y --no-install-recommends ca-certificates curl git gh ripgrep nano
+        apt-get install -y --no-install-recommends ca-certificates curl git gh ripgrep nano ttyd
         exit 0
         ;;
-    agents|opencode|versions|update|diagnose) ;;
+    embeddinggemma-system)
+        [[ $(id -u) == 0 ]] || fail 'Esta etapa exige o root simulado do PRoot.'
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update
+        apt-get install -y --no-install-recommends python3 python3-venv
+        exit 0
+        ;;
+    agents|opencode|versions|update|diagnose|embeddinggemma-install|install-assets) ;;
     *) printf '%s\n' 'Etapa interna desconhecida. Use install.sh no Termux.' >&2; exit 2 ;;
 esac
 
@@ -523,6 +530,35 @@ case "$stage" in
     opencode)
         mkdir -p "$HOME/.local/bin"
         ensure_agent opencode
+        ;;
+    embeddinggemma-install)
+        [[ $# -eq 1 ]] || fail 'Uso interno: embeddinggemma-install.'
+        command -v python3 >/dev/null 2>&1 || fail 'Python 3 nao instalado; execute ia embeddinggemma install novamente.'
+        if [[ ! -e "$HOME/.venv-ai" ]]; then
+            python3 -m venv "$HOME/.venv-ai"
+        fi
+        [[ -x "$HOME/.venv-ai/bin/python3" && -x "$HOME/.venv-ai/bin/pip" ]] \
+            || fail "$HOME/.venv-ai existe, mas nao e um ambiente Python utilizavel."
+        "$HOME/.venv-ai/bin/pip" install sentence-transformers fastapi uvicorn
+        "$HOME/.venv-ai/bin/python3" -c 'import fastapi, sentence_transformers, uvicorn'
+        printf '%s\n' 'EmbeddingGemma instalado. O modelo sera baixado no primeiro uso.'
+        ;;
+    install-assets)
+        [[ $# -eq 2 ]] || fail 'Uso interno: install-assets <repositorio>.'
+        source_dir="$2"
+        [[ -d "$source_dir/scripts" ]] || fail "Repositorio nao encontrado: $source_dir"
+        mkdir -p "$HOME/.local/share/termux-ai/tools" "$HOME/.local/share/termux-ai/web" "$HOME/.local/bin"
+        install -m 644 "$source_dir/scripts/setup-linux.sh" "$HOME/.local/share/termux-ai/setup-linux.sh"
+        install -m 644 "$source_dir/scripts/webui.sh" "$HOME/.local/share/termux-ai/webui.sh"
+        install -m 644 "$source_dir/scripts/web-menu.sh" "$HOME/.local/share/termux-ai/web/menu.sh"
+        install -m 644 "$source_dir/scripts/embeddinggemma_web.py" "$HOME/.local/share/termux-ai/tools/embeddinggemma_web.py"
+        install -m 644 "$source_dir/scripts/embeddinggemma_cli.py" "$HOME/.local/share/termux-ai/tools/embeddinggemma_cli.py"
+        if [[ ! -e "$HOME/.local/bin/embeddinggemma" && ! -L "$HOME/.local/bin/embeddinggemma" ]]; then
+            install -m 755 "$source_dir/scripts/embeddinggemma-launcher.sh" "$HOME/.local/bin/embeddinggemma"
+        fi
+        if [[ ! -e "$HOME/.local/bin/embedding" && ! -L "$HOME/.local/bin/embedding" ]]; then
+            ln -s embeddinggemma "$HOME/.local/bin/embedding"
+        fi
         ;;
     versions)
         print_versions
