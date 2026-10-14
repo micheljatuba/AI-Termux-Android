@@ -140,6 +140,7 @@ install_claude() {
     fi
     printf 'Instalando Claude Code %s pelo instalador oficial.\n' "$1"
     curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+        --connect-timeout 15 --max-time 300 --retry 2 --retry-max-time 600 \
         --output "$work_dir/claude-install.sh" https://claude.ai/install.sh
     bash "$work_dir/claude-install.sh" "$1" < /dev/null
 }
@@ -153,6 +154,7 @@ antigravity_release() {
         *) printf '%s\n' 'Arquitetura nao suportada pelo Antigravity CLI.' >&2; return 1 ;;
     esac
     curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
+        --connect-timeout 15 --max-time 300 --retry 2 --retry-max-time 600 \
         --output "$1/antigravity.json" "$antigravity_manifest_base/$platform.json" || return 1
     node - "$1/antigravity.json" <<'NODE' || return 1
 const { readFileSync } = require('node:fs');
@@ -187,6 +189,7 @@ install_antigravity() {
     fi
     printf 'Instalando Antigravity CLI %s (%s).\n' "${release[2]}" "${release[3]}"
     curl --fail --progress-bar --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
+        --connect-timeout 15 --max-time 300 --retry 2 --retry-max-time 600 \
         --output "$release_dir/antigravity-package" "${release[0]}"
     if ! printf '%s  %s\n' "${release[1]}" "$release_dir/antigravity-package" | sha512sum --check --status; then
         fail 'SHA-512 do Antigravity nao confere; instalacao interrompida.'

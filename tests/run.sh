@@ -735,6 +735,7 @@ printf '%s\n' 'PASS guest failure stops cleanly and can be retried'
 
 export HOME="$test_root/guest-home"
 export TERMUX_AI_TEST_DOWNLOAD_LOG="$test_root/download.log"
+export TERMUX_AI_TEST_CURL_ARGS="$test_root/curl-arguments.log"
 export TERMUX_AI_TEST_NPM_LOG="$test_root/npm.log"
 export TERMUX_AI_TEST_AGY_PAYLOAD="$test_root/antigravity.tar.gz"
 mkdir -p "$HOME" "$test_root/payload"
@@ -836,6 +837,7 @@ cat > "$test_root/bin/curl" <<'MOCK'
 set -euo pipefail
 destination=''
 source_url=''
+printf '%s\n' "$*" >> "$TERMUX_AI_TEST_CURL_ARGS"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --output) destination="$2"; shift ;;
@@ -885,6 +887,13 @@ make_agy_payload 1.2.1 0
 : > "$TERMUX_AI_TEST_NPM_LOG"
 : > "$TERMUX_AI_TEST_DOWNLOAD_LOG"
 bash "$setup_script" agents > "$test_root/guest-setup.log"
+assert_equal "$(wc -l < "$TERMUX_AI_TEST_CURL_ARGS" | tr -d ' ')" 3 'checks all three agent downloads'
+while IFS= read -r curl_arguments; do
+    [[ $curl_arguments == *'--connect-timeout 15'* && $curl_arguments == *'--max-time 300'* \
+        && $curl_arguments == *'--retry 2'* && $curl_arguments == *'--retry-max-time 600'* ]] \
+        || fail_test 'agent download lacks bounded timeouts and retries'
+done < "$TERMUX_AI_TEST_CURL_ARGS"
+printf '%s\n' 'PASS agent downloads have bounded timeouts and retries'
 expected_npm="$(printf 'install -g --prefix %s %s\n' \
     "$HOME/.local" "@openai/codex@$codex_pin" \
     "$HOME/.local" "@github/copilot@$copilot_pin" \

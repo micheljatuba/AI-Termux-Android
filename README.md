@@ -84,6 +84,13 @@ bash install.sh
 Mantenha o projeto na home privada do Termux, fora de Download ou do armazenamento
 compartilhado. Revise os scripts antes de executar; baixe o repositorio completo.
 
+Os downloads diretos do instalador Claude e do manifesto/pacote Antigravity
+limitam a conexao a 15 segundos e cada tentativa a 5 minutos. Falhas transitorias
+podem receber ate duas novas tentativas; o curl deixa de iniciar novas tentativas
+apos 10 minutos. Esses limites nao abrangem os comandos `pkg`, `npm`, `apt-get`
+nem downloads internos dos instaladores dos fornecedores. Se a instalacao falhar,
+aguarde a execucao terminar e rode `bash install.sh` novamente; nao apague o Linux.
+
 > [!NOTE]
 > Ja tem um menu `ia` ou Ubuntu configurado manualmente? Veja
 > [Instalacoes existentes](#instalacoes-existentes). O instalador nao substitui
