@@ -2,8 +2,20 @@
 import argparse
 import html
 import os
+import sys
 from pathlib import Path
 from typing import Annotated
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from embeddinggemma_cli import (
+    MODEL_ID,
+    VALID_DIMS,
+    MAX_SEARCH_FILES,
+    MAX_SEARCH_CHUNKS,
+    collect_search_chunks,
+    get_model as load_shared_model,
+    rank_search_chunks,
+)
 
 import uvicorn
 from fastapi import FastAPI, HTTPException
@@ -11,12 +23,9 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-MODEL_ID = "google/embeddinggemma-2"
-VALID_DIMS = (128, 256, 512, 768)
 MAX_INPUTS = 16
 MAX_TEXT_LENGTH = 8192
-MAX_SEARCH_FILES = 200
-MAX_SEARCH_CHUNKS = 100
+DEFAULT_DIM = 256
 model = None
 SEARCH_ROOT = Path(os.environ.get("TERMUX_AI_SEARCH_ROOT", str(Path.home()))).expanduser().resolve()
 
@@ -24,19 +33,14 @@ SEARCH_ROOT = Path(os.environ.get("TERMUX_AI_SEARCH_ROOT", str(Path.home()))).ex
 def get_model():
     global model
     if model is None:
-        from sentence_transformers import SentenceTransformer
-
-        model = SentenceTransformer(
-            MODEL_ID,
-            config_kwargs={"vision_config": None, "audio_config": None},
-        )
+        model = load_shared_model()
     return model
 
 
 class EmbeddingRequest(BaseModel):
     input: str | list[str]
     model: str = MODEL_ID
-    dimensions: int = Field(default=256, strict=True)
+    dimensions: int | None = Field(default=None, strict=True)
 
 
 class CompareRequest(BaseModel):
@@ -82,13 +86,17 @@ def health():
 def list_models():
     return {
         "object": "list",
-        "data": [{"id": MODEL_ID, "object": "model", "owned_by": "google"}],
+        "data": [
+            {"id": "embeddinggemma-2", "object": "model", "owned_by": "google"},
+            {"id": MODEL_ID, "object": "model", "owned_by": "google"},
+        ],
     }
 
 
 @app.post("/v1/embeddings")
 def embeddings(request: EmbeddingRequest):
-    check_dimensions(request.dimensions)
+    dimensions = request.dimensions if request.dimensions is not None else DEFAULT_DIM
+    check_dimensions(dimensions)
     if request.model not in (MODEL_ID, "embeddinggemma-2"):
         raise HTTPException(status_code=404, detail="model not found")
     texts = [request.input] if isinstance(request.input, str) else request.input
@@ -98,7 +106,7 @@ def embeddings(request: EmbeddingRequest):
     token_count = int(tokenized["attention_mask"].sum().item())
     vectors = encoder.encode(
         texts,
-        truncate_dim=request.dimensions,
+        truncate_dim=dimensions,
         normalize_embeddings=True,
     )
     return {
@@ -141,68 +149,28 @@ def search(request: SearchRequest):
         raise HTTPException(status_code=404, detail="path not found")
     if not target.is_relative_to(search_root):
         raise HTTPException(status_code=403, detail="search is limited to the directory opened in Termux")
-    supported = {".py", ".sh", ".js", ".ts", ".md", ".txt", ".json", ".html", ".css", ".c", ".h", ".cpp", ".rs", ".go"}
-    ignored = {".git", ".cache", "node_modules", "__pycache__", ".local", ".venv", ".venv-ai"}
-    if target.is_file():
-        files = [target]
-    else:
-        files = []
-        for base, dirs, names in os.walk(target):
-            dirs[:] = [directory for directory in dirs if directory not in ignored]
-            for name in names:
-                if Path(name).suffix.lower() in supported:
-                    files.append(Path(base) / name)
-                    if len(files) >= MAX_SEARCH_FILES:
-                        break
-            if len(files) >= MAX_SEARCH_FILES:
-                break
-    chunks = []
-    for path in files:
-        resolved = path.resolve()
-        if not resolved.is_relative_to(search_root) or not resolved.is_file():
-            continue
-        try:
-            if resolved.stat().st_size > 250_000:
-                continue
-            lines = resolved.read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError:
-            continue
-        for offset in range(0, len(lines), 30):
-            text = "\n".join(lines[offset:offset + 30]).strip()
-            if len(text) > 40:
-                chunks.append({"file": str(path.relative_to(target if target.is_dir() else target.parent)), "line": offset + 1, "text": text[:600]})
-                if len(chunks) >= MAX_SEARCH_CHUNKS:
-                    break
-        if len(chunks) >= MAX_SEARCH_CHUNKS:
-            break
+    chunks = collect_search_chunks(target, root_bound=search_root)
     if not chunks:
-        return {"results": []}
-    encoder = get_model()
-    query_vector = encoder.encode(
-        request.query,
-        prompt_name="SearchQuery",
-        truncate_dim=request.dimensions,
-        normalize_embeddings=True,
+        return {"results": [], "cached": 0, "encoded": 0}
+    results, cached_count, encoded_count = rank_search_chunks(
+        query=request.query,
+        chunks=chunks,
+        dimensions=request.dimensions,
+        top=request.top,
+        encoder=get_model(),
     )
-    document_vectors = encoder.encode(
-        [chunk["text"] for chunk in chunks],
-        prompt_name="Document",
-        truncate_dim=request.dimensions,
-        normalize_embeddings=True,
-        batch_size=8,
-    )
-    scores = encoder.similarity(query_vector, document_vectors)[0]
-    ranked = sorted(enumerate(scores), key=lambda item: item[1].item(), reverse=True)[:request.top]
     return {
         "results": [
             {
-                "file": chunks[index]["file"],
-                "line": chunks[index]["line"],
-                "score": float(score.item()),
-                "preview": chunks[index]["text"][:200].replace("\n", " "),
+                "file": item["file"],
+                "line": item["line"],
+                "score": item["score"],
+                "preview": item["preview"],
             }
-            for index, score in ranked
-        ]
+            for item in results
+        ],
+        "cached": cached_count,
+        "encoded": encoded_count,
     }
 
 

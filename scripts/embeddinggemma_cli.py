@@ -9,6 +9,7 @@ import sys
 import argparse
 import time
 import json
+import hashlib
 from pathlib import Path
 
 # Suprime avisos desnecessários
@@ -16,7 +17,180 @@ os.environ["TOKENIZERS_PARALLELISM"] = "true"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 MODEL_ID = "google/embeddinggemma-2"
+VALID_DIMS = (128, 256, 512, 768)
+MAX_SEARCH_FILES = 200
+MAX_SEARCH_CHUNKS = 100
+MAX_FILE_SIZE = 250_000
+MAX_CACHE_ENTRIES = 2000
+SUPPORTED_EXTS = {
+    ".py", ".sh", ".js", ".ts", ".md", ".txt", ".json",
+    ".html", ".css", ".c", ".h", ".cpp", ".rs", ".go",
+}
+IGNORED_DIRS = {
+    ".git", ".cache", "node_modules", "__pycache__",
+    ".local", ".venv", ".venv-ai",
+}
 _model = None
+
+
+def get_cache_path() -> Path:
+    cache_dir = Path(os.environ.get("TERMUX_AI_CACHE_DIR", str(Path.home() / ".cache" / "termux-ai"))).expanduser()
+    return cache_dir / "embeddings-cache.json"
+
+
+def load_embedding_cache() -> dict:
+    cache_path = get_cache_path()
+    try:
+        if not cache_path.is_file():
+            return {}
+        data = json.loads(cache_path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and data.get("model") == MODEL_ID and isinstance(data.get("entries"), dict):
+            return data["entries"]
+    except Exception:
+        pass
+    return {}
+
+
+def save_embedding_cache(entries: dict) -> None:
+    cache_path = get_cache_path()
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if len(entries) > MAX_CACHE_ENTRIES:
+            keys = list(entries.keys())[-MAX_CACHE_ENTRIES:]
+            entries = {k: entries[k] for k in keys}
+        tmp_path = cache_path.with_suffix(".tmp")
+        payload = json.dumps({"model": MODEL_ID, "entries": entries})
+        tmp_path.write_text(payload, encoding="utf-8")
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, cache_path)
+    except Exception:
+        pass
+
+
+def chunk_cache_key(text: str, dimensions: int) -> str:
+    digest = hashlib.sha256(f"{MODEL_ID}:{dimensions}:{text}".encode("utf-8")).hexdigest()
+    return digest
+
+
+def collect_search_chunks(target: Path, root_bound: Path | None = None) -> list[dict]:
+    resolved_target = target.expanduser().resolve()
+    bound = (root_bound.expanduser().resolve() if root_bound is not None
+             else (resolved_target if resolved_target.is_dir() else resolved_target.parent))
+    if not resolved_target.exists():
+        raise FileNotFoundError(f"path not found: {target}")
+    if not resolved_target.is_relative_to(bound):
+        raise PermissionError("search is limited to the allowed directory")
+
+    if resolved_target.is_file():
+        files = [resolved_target]
+        base_dir = resolved_target.parent
+    else:
+        base_dir = resolved_target
+        files = []
+        for base, dirs, names in os.walk(resolved_target):
+            dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
+            for name in sorted(names):
+                candidate = Path(base) / name
+                if candidate.suffix.lower() in SUPPORTED_EXTS:
+                    files.append(candidate)
+                    if len(files) >= MAX_SEARCH_FILES:
+                        break
+            if len(files) >= MAX_SEARCH_FILES:
+                break
+
+    chunks: list[dict] = []
+    for path in files:
+        try:
+            resolved = path.resolve()
+            if not resolved.is_relative_to(bound) or not resolved.is_file():
+                continue
+            if resolved.stat().st_size > MAX_FILE_SIZE:
+                continue
+            lines = resolved.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        rel_file = str(path.relative_to(base_dir) if path != base_dir else path.name)
+        for offset in range(0, len(lines), 30):
+            text = "\n".join(lines[offset:offset + 30]).strip()
+            if len(text) > 40:
+                chunks.append({
+                    "file": rel_file,
+                    "line": offset + 1,
+                    "text": text[:600],
+                })
+                if len(chunks) >= MAX_SEARCH_CHUNKS:
+                    break
+        if len(chunks) >= MAX_SEARCH_CHUNKS:
+            break
+    return chunks
+
+
+def rank_search_chunks(query: str, chunks: list[dict], dimensions: int = 256, top: int = 5, encoder=None) -> tuple[list[dict], int, int]:
+    if not chunks:
+        return [], 0, 0
+    if encoder is None:
+        encoder = get_model()
+
+    cache_entries = load_embedding_cache()
+    vectors: list[list[float] | None] = [None] * len(chunks)
+    missing_indices: list[int] = []
+    missing_texts: list[str] = []
+    missing_keys: list[str] = []
+
+    for idx, chunk in enumerate(chunks):
+        key = chunk_cache_key(chunk["text"], dimensions)
+        cached = cache_entries.get(key)
+        if isinstance(cached, list) and len(cached) == dimensions:
+            vectors[idx] = cached
+        else:
+            missing_indices.append(idx)
+            missing_texts.append(chunk["text"])
+            missing_keys.append(key)
+
+    cached_count = len(chunks) - len(missing_indices)
+    if missing_texts:
+        encoded = encoder.encode(
+            missing_texts,
+            prompt_name="Document",
+            truncate_dim=dimensions,
+            normalize_embeddings=True,
+            batch_size=16,
+        )
+        for pos, idx in enumerate(missing_indices):
+            vec_item = encoded[pos]
+            vec_list = vec_item.tolist() if hasattr(vec_item, "tolist") else [float(x) for x in vec_item]
+            vectors[idx] = vec_list
+            cache_entries[missing_keys[pos]] = vec_list
+        save_embedding_cache(cache_entries)
+
+    q_emb = encoder.encode(
+        query,
+        prompt_name="SearchQuery",
+        truncate_dim=dimensions,
+        normalize_embeddings=True,
+    )
+    q_list = q_emb.tolist() if hasattr(q_emb, "tolist") else [float(x) for x in q_emb]
+    if q_list and isinstance(q_list[0], list):
+        q_list = q_list[0]
+
+    scored = []
+    for idx, doc_vec in enumerate(vectors):
+        assert doc_vec is not None
+        score = float(sum(a * b for a, b in zip(q_list, doc_vec)))
+        scored.append((idx, score))
+
+    scored.sort(key=lambda item: item[1], reverse=True)
+    results = [
+        {
+            "file": chunks[idx]["file"],
+            "line": chunks[idx]["line"],
+            "score": score,
+            "text": chunks[idx]["text"],
+            "preview": chunks[idx]["text"][:200].replace("\n", " "),
+        }
+        for idx, score in scored[:top]
+    ]
+    return results, cached_count, len(missing_indices)
 
 def get_model(truncate_dim=None):
     global _model
@@ -105,7 +279,7 @@ def cmd_compare(args):
 
 def cmd_search(args):
     query = args.query
-    target_path = Path(args.path or ".").resolve()
+    target_path = Path(args.path or ".").expanduser().resolve()
     max_results = args.top or 5
     truncate_dim = args.dim or 256
 
@@ -113,114 +287,49 @@ def cmd_search(args):
         print(f"Caminho não encontrado: {target_path}", file=sys.stderr)
         return 1
 
-    supported_exts = {".py", ".sh", ".js", ".ts", ".md", ".txt", ".json", ".html", ".css", ".c", ".h", ".cpp", ".rs", ".go"}
-    chunks = []
-
-    if target_path.is_file():
-        files_to_scan = [target_path]
-        base_dir = target_path.parent
-    else:
-        base_dir = target_path
-        files_to_scan = []
-        for root, dirs, files in os.walk(target_path):
-            dirs[:] = [d for d in dirs if d not in {".git", ".cache", "node_modules", "__pycache__", ".local", ".venv", ".venv-ai"}]
-            for fname in files:
-                fpath = Path(root) / fname
-                if fpath.suffix.lower() in supported_exts:
-                    files_to_scan.append(fpath)
-
-    for fpath in files_to_scan:
-        try:
-            content = fpath.read_text(encoding="utf-8", errors="ignore")
-            lines = content.splitlines()
-            step = 30
-            for i in range(0, len(lines), step):
-                chunk_text = "\n".join(lines[i:i + step]).strip()
-                if len(chunk_text) > 40:
-                    chunks.append({
-                        "file": str(fpath.relative_to(base_dir) if fpath != base_dir else fpath.name),
-                        "start_line": i + 1,
-                        "text": chunk_text
-                    })
-        except Exception:
-            continue
+    try:
+        chunks = collect_search_chunks(target_path)
+    except (FileNotFoundError, PermissionError) as exc:
+        print(f"Erro na busca: {exc}", file=sys.stderr)
+        return 1
 
     if not chunks:
         print("Nenhum arquivo legível encontrado.", file=sys.stderr)
         return
 
-    print(f"Indexados {len(chunks)} blocos em '{base_dir.name}'. Processando busca...")
-    model = get_model()
+    base_name = target_path.name if target_path.is_dir() else target_path.parent.name
+    print(f"Indexados {len(chunks)} blocos em '{base_name}'. Processando busca...")
 
     t0 = time.time()
-    q_emb = model.encode(query, prompt_name="SearchQuery", truncate_dim=truncate_dim, normalize_embeddings=True)
-    doc_texts = [c["text"][:600] for c in chunks]
-    doc_embs = model.encode(doc_texts, prompt_name="Document", truncate_dim=truncate_dim, normalize_embeddings=True, batch_size=32)
-
-    sims = model.similarity(q_emb, doc_embs)[0]
-    ranked = sorted(enumerate(sims), key=lambda x: x[1].item(), reverse=True)[:max_results]
+    results, cached_count, encoded_count = rank_search_chunks(
+        query=query,
+        chunks=chunks,
+        dimensions=truncate_dim,
+        top=max_results,
+    )
     dt = time.time() - t0
 
-    print(f"\n=== Resultados para: '{query}' ({dt:.2f}s) ===")
-    for rank, (idx, score) in enumerate(ranked, 1):
-        chunk = chunks[idx]
-        preview = chunk["text"][:140].replace("\n", " ")
-        print(f"\n{rank}. [{score.item():.4f}] {chunk['file']}:{chunk['start_line']}")
+    cache_info = f"cache: {cached_count}/{len(chunks)}"
+    print(f"\n=== Resultados para: '{query}' ({dt:.2f}s, {cache_info}) ===")
+    for rank, item in enumerate(results, 1):
+        preview = item["text"][:140].replace("\n", " ")
+        print(f"\n{rank}. [{item['score']:.4f}] {item['file']}:{item['line']}")
         print(f"   Prévia: {preview}...")
     print()
 
 def cmd_serve(args):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     import uvicorn
-    from fastapi import FastAPI
-    from pydantic import BaseModel
-    from typing import List, Union
+    import embeddinggemma_web
 
-    app = FastAPI(title="EmbeddingGemma 2 Local Server", version="1.0.0")
-    model = get_model(truncate_dim=args.dim)
-
-    class EmbeddingRequest(BaseModel):
-        input: Union[str, List[str]]
-        model: str = "google/embeddinggemma-2"
-        dimensions: int = args.dim or 768
-
-    @app.get("/health")
-    def health():
-        return {"status": "ok", "model": MODEL_ID}
-
-    @app.get("/v1/models")
-    def list_models():
-        return {
-            "object": "list",
-            "data": [
-                {"id": "embeddinggemma-2", "object": "model", "owned_by": "google"},
-                {"id": "google/embeddinggemma-2", "object": "model", "owned_by": "google"}
-            ]
-        }
-
-    @app.post("/v1/embeddings")
-    def create_embeddings(req: EmbeddingRequest):
-        inputs = [req.input] if isinstance(req.input, str) else req.input
-        dim = req.dimensions if req.dimensions in (128, 256, 512, 768) else None
-
-        embs = model.encode(inputs, truncate_dim=dim, normalize_embeddings=True)
-        data = []
-        for idx, emb in enumerate(embs):
-            data.append({
-                "object": "embedding",
-                "index": idx,
-                "embedding": emb.tolist() if hasattr(emb, "tolist") else list(emb)
-            })
-        return {
-            "object": "list",
-            "data": data,
-            "model": req.model,
-            "usage": {"prompt_tokens": len(inputs) * 10, "total_tokens": len(inputs) * 10}
-        }
+    if args.dim in VALID_DIMS:
+        embeddinggemma_web.DEFAULT_DIM = args.dim
+    embeddinggemma_web.get_model()
 
     print(f"\nIniciando servidor EmbeddingGemma 2 na porta {args.port}...")
     print(f"Endpoint compatível com OpenAI: http://{args.host}:{args.port}/v1/embeddings")
     print("Pressione Ctrl+C para encerrar.\n")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    uvicorn.run(embeddinggemma_web.app, host=args.host, port=args.port, log_level="info")
 
 def interactive_menu():
     while True:

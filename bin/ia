@@ -255,7 +255,40 @@ valid_diag_line() {
                 *) return 1 ;;
             esac
             ;;
+        local)
+            [[ $name == embeddinggemma ]] || return 1
+            case "$status" in
+                ready|installed) [[ $detail =~ $version_pattern ]] ;;
+                missing|broken) [[ $detail == - ]] ;;
+                *) return 1 ;;
+            esac
+            ;;
+        web)
+            case "$name:$status:$detail" in
+                terminal:active:127.0.0.1:7680|embedding:active:127.0.0.1:8085) return 0 ;;
+                terminal:stopped:-|embedding:stopped:-) return 0 ;;
+                *) return 1 ;;
+            esac
+            ;;
         *) return 1 ;;
+    esac
+}
+
+local_state_label() {
+    case "$1" in
+        ready) printf '%s' 'pronto (modelo em cache)' ;;
+        installed) printf '%s' 'instalado (baixa no 1o uso)' ;;
+        missing) printf '%s' 'opcional (nao instalado)' ;;
+        broken) printf '%s' 'instalacao incompleta' ;;
+        *) printf '%s' 'nao verificado' ;;
+    esac
+}
+
+web_state_label() {
+    case "$1" in
+        active) printf 'ativo (http://%s)' "$2" ;;
+        stopped) printf '%s' 'parado' ;;
+        *) printf '%s' 'nao verificado' ;;
     esac
 }
 
@@ -376,6 +409,17 @@ show_diagnostics() {
         esac
     done
 
+    if [[ -n ${diag_status[local:embeddinggemma]:-} || -n ${diag_status[web:terminal]:-} || -n ${diag_status[web:embedding]:-} ]]; then
+        printf '\n%s\n' 'Recursos locais'
+        status="${diag_status[local:embeddinggemma]:-}"
+        printf '  %-16s %-12s %s\n' 'EmbeddingGemma 2' "${diag_detail[local:embeddinggemma]:--}" "$(local_state_label "$status")"
+        if [[ $status == broken ]]; then
+            next_steps+=('EmbeddingGemma 2: reinstale com ia embeddinggemma install.')
+        fi
+        printf '  %-16s %s\n' 'WebUI Terminal' "$(web_state_label "${diag_status[web:terminal]:-}" "${diag_detail[web:terminal]:--}")"
+        printf '  %-16s %s\n' 'WebUI Embedding' "$(web_state_label "${diag_status[web:embedding]:-}" "${diag_detail[web:embedding]:--}")"
+    fi
+
     printf '\n%s\n  %s\n' Protecao 'PRoot nao isola os agentes: eles acessam os mesmos arquivos que o Termux.'
     case "${diag_status[agent:codex]:-}" in
         missing|broken) ;;
@@ -474,6 +518,35 @@ run_web_stage() {
         /bin/bash -se -- "$action" "$target" < "$state_dir/webui.sh"
 }
 
+update_web_wake_lock() {
+    local action="$1" target="$2"
+    mkdir -p "$state_dir/web"
+    case "$action:$target" in
+        start:both)
+            : > "$state_dir/web/active.terminal"
+            : > "$state_dir/web/active.embedding"
+            ;;
+        start:terminal) : > "$state_dir/web/active.terminal" ;;
+        start:embedding) : > "$state_dir/web/active.embedding" ;;
+        stop:both)
+            rm -f -- "$state_dir/web/active.terminal" "$state_dir/web/active.embedding"
+            ;;
+        stop:terminal) rm -f -- "$state_dir/web/active.terminal" ;;
+        stop:embedding) rm -f -- "$state_dir/web/active.embedding" ;;
+    esac
+    if [[ $action == start ]]; then
+        if command -v termux-wake-lock >/dev/null 2>&1; then
+            termux-wake-lock >/dev/null 2>&1 || true
+        fi
+    elif [[ $action == stop ]]; then
+        if [[ ! -e "$state_dir/web/active.terminal" && ! -e "$state_dir/web/active.embedding" ]]; then
+            if command -v termux-wake-unlock >/dev/null 2>&1; then
+                termux-wake-unlock >/dev/null 2>&1 || true
+            fi
+        fi
+    fi
+}
+
 manage_web() {
     local action="${1:-start}" target="${2:-both}"
     if (( $# > 2 )); then
@@ -488,6 +561,7 @@ manage_web() {
             ;;
     esac
     run_web_stage "$action" "$target" || return
+    update_web_wake_lock "$action" "$target"
     if [[ $action == start ]]; then
         [[ $target == embedding ]] || printf '%s\n' 'Terminal: http://127.0.0.1:7680'
         [[ $target == terminal ]] || printf '%s\n' 'EmbeddingGemma: http://127.0.0.1:8085'

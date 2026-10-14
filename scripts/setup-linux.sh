@@ -464,6 +464,40 @@ diagnose_network() {
     fi
 }
 
+web_service_active() {
+    local expected="$2" pid_file="$HOME/.local/share/termux-ai/web/$1.pid" pid
+    [[ -f "$pid_file" ]] || return 1
+    IFS= read -r pid < "$pid_file" || return 1
+    [[ $pid =~ ^[1-9][0-9]*$ && -r "/proc/$pid/cmdline" ]] || return 1
+    tr '\0' ' ' < "/proc/$pid/cmdline" | grep -Fq -- "$expected"
+}
+
+diagnose_local() {
+    local venv_py="$HOME/.venv-ai/bin/python3"
+    local hf_cache="${HF_HOME:-$HOME/.cache/huggingface}/hub/models--google--embeddinggemma-2"
+    if [[ ! -e "$HOME/.venv-ai" && ! -L "$HOME/.venv-ai" ]]; then
+        printf '@diag\tlocal\tembeddinggemma\tmissing\t-\n'
+    elif [[ -x "$venv_py" ]] && timeout 30s "$venv_py" -c 'import fastapi, sentence_transformers, uvicorn' < /dev/null > /dev/null 2>&1; then
+        if [[ -d "$hf_cache" ]]; then
+            printf '@diag\tlocal\tembeddinggemma\tready\t2.0.0\n'
+        else
+            printf '@diag\tlocal\tembeddinggemma\tinstalled\t2.0.0\n'
+        fi
+    else
+        printf '@diag\tlocal\tembeddinggemma\tbroken\t-\n'
+    fi
+    if web_service_active terminal 'ttyd -i lo -p 7680'; then
+        printf '@diag\tweb\tterminal\tactive\t127.0.0.1:7680\n'
+    else
+        printf '@diag\tweb\tterminal\tstopped\t-\n'
+    fi
+    if web_service_active embedding 'embeddinggemma_web.py --host 127.0.0.1 --port 8085'; then
+        printf '@diag\tweb\tembedding\tactive\t127.0.0.1:8085\n'
+    else
+        printf '@diag\tweb\tembedding\tstopped\t-\n'
+    fi
+}
+
 # Saida para o Termux: @diag, tipo, nome, situacao e detalhe.
 print_diagnostics() {
     local tool
@@ -476,6 +510,7 @@ print_diagnostics() {
         ) &
     done
     diagnose_network > "$work_dir/network.diag" &
+    diagnose_local > "$work_dir/local.diag" &
     diagnose_system "$1"
     wait
     for tool in "${agent_tools[@]}"; do
@@ -483,6 +518,7 @@ print_diagnostics() {
     done
     cat -- "$work_dir/network.diag"
     printf '@diag\tisolation\tcodex\t%s\t-\n' "$(< "$work_dir/isolation.diag")"
+    cat -- "$work_dir/local.diag"
 }
 
 stage="${1:-}"

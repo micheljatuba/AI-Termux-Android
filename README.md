@@ -117,8 +117,10 @@ com `ia web stop`.
 
 As duas interfaces escutam **somente em 127.0.0.1** e nao aceitam conexoes de
 outros aparelhos no Wi-Fi. Nao altere o endereco de escuta para `0.0.0.0`.
-O instalador inclui `ttyd` no Linux. Para habilitar o EmbeddingGemma, execute
-no Termux:
+O instalador inclui `ttyd` no Linux e aciona `termux-wake-lock` automaticamente
+quando disponivel, evitando que o Android suspenda os servicos ao alternar para
+o navegador (`ia web stop` libera o wake-lock). Para habilitar o EmbeddingGemma,
+execute no Termux:
 
 ```sh
 ia embeddinggemma install
@@ -384,6 +386,7 @@ como o comando de login de um agente desconectado.
 | Termux | Versoes do Android, Termux e PRoot-Distro, espaco livre e o Linux em uso |
 | Linux | Sistema, Node.js 22+, Git, acesso a internet e gravacao na pasta atual |
 | Agentes | Versao e login de cada agente, sem exibir contas, emails ou tokens |
+| Recursos locais | Situacao do EmbeddingGemma 2 (cache local) e dos servicos `ia web` |
 | Protecao | Se o sandbox do Codex funciona e os limites de isolamento do PRoot |
 
 O login e lido do estado local de cada CLI: `codex login status`,

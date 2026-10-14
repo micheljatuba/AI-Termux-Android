@@ -156,6 +156,17 @@ rm "$launcher_state/linux.conf"
 printf '%s\n' 'PASS Linux selection from the installer configuration'
 
 printf 'name=ubuntu\nuser=root\n' > "$launcher_state/linux.conf"
+export TERMUX_AI_TEST_WAKELOCK_LOG="$test_root/wakelock.log"
+cat > "$test_root/bin/termux-wake-lock" <<'MOCK'
+#!/usr/bin/env bash
+printf 'lock\n' >> "$TERMUX_AI_TEST_WAKELOCK_LOG"
+MOCK
+cat > "$test_root/bin/termux-wake-unlock" <<'MOCK'
+#!/usr/bin/env bash
+printf 'unlock\n' >> "$TERMUX_AI_TEST_WAKELOCK_LOG"
+MOCK
+chmod +x "$test_root/bin/termux-wake-lock" "$test_root/bin/termux-wake-unlock"
+: > "$TERMUX_AI_TEST_WAKELOCK_LOG"
 bash "$project_root/bin/ia" web status embedding
 mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
 assert_equal "${actual_args[2]}" --work-dir 'preserves the current directory for the WebUI'
@@ -164,18 +175,24 @@ assert_equal "${actual_args[6]}" /bin/bash 'runs the web service controller insi
 assert_equal "${actual_args[9]}" status 'requests WebUI status'
 assert_equal "${actual_args[10]}" embedding 'limits status to EmbeddingGemma'
 assert_equal "$(< "$TERMUX_AI_TEST_STAGE_VERBOSE")" '-1' 'keeps PRoot startup quiet for WebUI'
+test ! -s "$TERMUX_AI_TEST_WAKELOCK_LOG"
 bash "$project_root/bin/ia" web > "$test_root/web-start.log"
 mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
 assert_equal "${actual_args[9]}" start 'starts both WebUI services by default'
 assert_equal "${actual_args[10]}" both 'starts terminal and EmbeddingGemma by default'
 grep -Fq 'http://127.0.0.1:7680' "$test_root/web-start.log"
 grep -Fq 'http://127.0.0.1:8085' "$test_root/web-start.log"
+assert_equal "$(< "$TERMUX_AI_TEST_WAKELOCK_LOG")" 'lock' 'acquires termux-wake-lock when starting WebUI'
+bash "$project_root/bin/ia" web stop embedding
+assert_equal "$(< "$TERMUX_AI_TEST_WAKELOCK_LOG")" 'lock' 'keeps wake-lock while terminal WebUI remains active'
+bash "$project_root/bin/ia" web stop terminal
+assert_equal "$(< "$TERMUX_AI_TEST_WAKELOCK_LOG")" $'lock\nunlock' 'releases wake-lock when last WebUI service stops'
 expect_failure 'WebUI ran inside the Linux guest' env TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" web status
 grep -q 'Use ia web no Termux' "$test_root/expected-failure.log"
 expect_failure 'unknown WebUI target was accepted' bash "$project_root/bin/ia" web start network
 grep -q 'Uso: ia web' "$test_root/expected-failure.log"
-rm "$launcher_state/linux.conf"
-printf '%s\n' 'PASS local WebUI dispatch, service management and loopback links'
+rm "$launcher_state/linux.conf" "$test_root/bin/termux-wake-lock" "$test_root/bin/termux-wake-unlock"
+printf '%s\n' 'PASS local WebUI dispatch, service management, wake-lock and loopback links'
 
 printf 'name=ubuntu\nuser=root\n' > "$launcher_state/linux.conf"
 : > "$TERMUX_AI_TEST_CALLS"
@@ -411,6 +428,9 @@ printf '%s\n' \
     $'@diag\tagent\topencode\tno\t1.18.34' \
     $'@diag\tcheck\tnetwork\tok\t-' \
     $'@diag\tisolation\tcodex\tunavailable\t-' \
+    $'@diag\tlocal\tembeddinggemma\tready\t2.0.0' \
+    $'@diag\tweb\tterminal\tactive\t127.0.0.1:7680' \
+    $'@diag\tweb\tembedding\tstopped\t-' \
     $'@diag\tagent\tgemini\tyes\t1.0.0' \
     $'@diag\tagent\tclaude\tno\t2.1;id' \
     $'@diag\tcheck\tdistro\tok\tUbuntu;reboot' \
@@ -440,6 +460,9 @@ expect_lines "$test_root/diag.log" \
     '^  Codex +0\.160\.0 +login ok$' \
     '^  Antigravity CLI +1\.2\.16 +login ok$' \
     '^  OpenCode +1\.18\.34 +sem login$' \
+    '^  EmbeddingGemma 2 +2\.0\.0 +pronto \(modelo em cache\)$' \
+    '^  WebUI Terminal +ativo \(http://127\.0\.0\.1:7680\)$' \
+    '^  WebUI Embedding +parado$' \
     '^  PRoot nao isola os agentes' \
     '^  Codex: o sandbox nao funciona aqui; ia codex abre no modo Pedir aprovacao\.$' \
     '^  - OpenCode: entre com ia opencode auth login; sem chave de API, use GitHub Copilot ou ChatGPT Plus/Pro\.$'
@@ -1158,7 +1181,10 @@ expected_diag="$(printf '@diag\t%s\t%s\t%s\t%s\n' \
     agent agy yes 1.2.3 \
     agent opencode yes 1.2.3 \
     check network ok - \
-    isolation codex unavailable -)"
+    isolation codex unavailable - \
+    local embeddinggemma missing - \
+    web terminal stopped - \
+    web embedding stopped -)"
 assert_equal "$(sed 1d "$test_root/guest-diag.log")" "$expected_diag" 'reports every check and agent in order'
 grep -Eq $'^@diag\tcheck\tdistro\tok\t([A-Za-z0-9 ._()/+:-]{1,60}|-)$' <<< "$(head -n 1 "$test_root/guest-diag.log")" \
     || fail_test 'invalid Linux name in the diagnostic'
@@ -1526,4 +1552,56 @@ assert_equal "$(< "$test_root/embedding-version.log")" 2.0.0 'runs the version c
 expect_failure 'EmbeddingGemma server accepted a non-loopback host' python3 "$project_root/scripts/embeddinggemma_cli.py" serve --host 0.0.0.0
 grep -q 'invalid choice' "$test_root/expected-failure.log"
 grep -Fq 'codex -s workspace-write -a on-request' "$project_root/scripts/web-menu.sh"
+grep -Fq '7. EmbeddingGemma 2 (local, opcional)' "$project_root/scripts/web-menu.sh"
+grep -Fq '8. Versoes e atualizacoes dos agentes' "$project_root/scripts/web-menu.sh"
+grep -Fq '9. Diagnostico do ambiente' "$project_root/scripts/web-menu.sh"
+
+TERMUX_AI_CACHE_DIR="$test_root/emb-cache" python3 - "$project_root/scripts" "$test_root" <<'PYTEST'
+import pathlib
+import sys
+
+scripts_dir = pathlib.Path(sys.argv[1])
+test_root = pathlib.Path(sys.argv[2])
+sys.path.insert(0, str(scripts_dir))
+
+import embeddinggemma_cli as cli
+
+search_dir = test_root / "search-sample"
+search_dir.mkdir(parents=True, exist_ok=True)
+(search_dir / "valid.py").write_text(
+    "def authenticate_user(token):\n    # Valida o token de sessao do usuario no sistema\n    return bool(token)\n",
+    encoding="utf-8",
+)
+(search_dir / "oversized.py").write_text("x = 1\n" * 60000, encoding="utf-8")
+
+outside_file = test_root / "outside-secret.py"
+outside_file.write_text("secret = 'should not be indexed through symlink'\n" * 3, encoding="utf-8")
+(search_dir / "escape.py").symlink_to(outside_file)
+
+chunks = cli.collect_search_chunks(search_dir)
+assert len(chunks) == 1, f"expected 1 valid chunk, got {len(chunks)}"
+assert chunks[0]["file"] == "valid.py"
+
+class FakeEncoder:
+    def __init__(self):
+        self.doc_calls = 0
+        self.query_calls = 0
+
+    def encode(self, texts, prompt_name=None, truncate_dim=256, normalize_embeddings=True, batch_size=16):
+        if prompt_name == "Document":
+            self.doc_calls += len(texts)
+            return [[0.5] * truncate_dim for _ in texts]
+        self.query_calls += 1
+        return [0.5] * truncate_dim
+
+encoder = FakeEncoder()
+results1, cached1, encoded1 = cli.rank_search_chunks("autenticacao", chunks, dimensions=128, top=5, encoder=encoder)
+assert cached1 == 0 and encoded1 == 1 and encoder.doc_calls == 1
+assert len(results1) == 1 and results1[0]["file"] == "valid.py"
+
+results2, cached2, encoded2 = cli.rank_search_chunks("autenticacao", chunks, dimensions=128, top=5, encoder=encoder)
+assert cached2 == 1 and encoded2 == 0 and encoder.doc_calls == 1
+assert len(results2) == 1 and results2[0]["file"] == "valid.py"
+PYTEST
+printf '%s\n' 'PASS EmbeddingGemma file limits, symlink boundary and persistent embedding cache'
 printf '%s\n' 'PASS shell syntax and Linux line endings'
