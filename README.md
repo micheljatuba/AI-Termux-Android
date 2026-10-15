@@ -4,20 +4,25 @@
 
 **Programe com IA direto do seu Android.**
 
-GitHub Copilot &middot; Claude Code &middot; Codex &middot; Antigravity &middot; OpenCode
+GitHub Copilot &middot; Claude Code &middot; Codex &middot; Antigravity &middot; OpenCode &middot; Hermes (opcional)
 
 [![Shell Checks](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml/badge.svg)](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml)
 ![Android 11 ou superior](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)
 ![Arquiteturas de 64 bits](https://img.shields.io/badge/64_bits-ARM64_%7C_x86__64-0969DA)
 [![Testado no Android](https://img.shields.io/badge/Testado-no_Android-198754)](#compatibilidade)
 
-[Instalar](#instalacao) &middot; [Primeiro uso](#primeiro-uso) &middot; [Na tela](#na-tela) &middot; [Atualizar](#atualizar) &middot; [Diagnostico](#diagnostico) &middot; [Compatibilidade](#compatibilidade) &middot; [Ajuda](#ajuda)
+[Instalar](#instalacao) &middot; [Primeiro uso](#primeiro-uso) &middot; [Na tela](#na-tela) &middot; [Painel](#acesso-pelo-navegador) &middot; [Orquestrar](#orquestracao-de-agentes) &middot; [Hermes](#hermes-agent-opcional) &middot; [Atualizar](#atualizar) &middot; [Diagnostico](#diagnostico) &middot; [Compatibilidade](#compatibilidade) &middot; [Ajuda](#ajuda)
 
 </div>
 
 Da ideia ao codigo, sem abrir um notebook. Tenha **Copilot, Claude Code, Codex,
 Antigravity e OpenCode** no mesmo ambiente, junto com Git, GitHub CLI e Node.js.
 Escolha seu agente, abra um projeto e continue de onde estiver.
+
+Quer mais? Abra **varios agentes ao mesmo tempo** em um
+[painel no navegador](#acesso-pelo-navegador), [orquestre-os](#orquestracao-de-agentes)
+para comparar respostas, encadear etapas ou dividir uma tarefa e, se quiser,
+instale o [Hermes Agent](#hermes-agent-opcional).
 
 **Cinco agentes. Um menu. Seus projetos no Android.** Sem root no Android e
 sem depender de um PC no uso diario.
@@ -104,39 +109,10 @@ ia
 
 O menu tambem aparece em novas sessoes **Bash** do Termux. Escolha o numero do
 agente e pressione Enter. A opcao `7` abre o EmbeddingGemma 2 local (opcional),
-`8` atualiza os agentes e `9` faz o [diagnostico](#diagnostico). Para consultar
+`8` atualiza os agentes, `9` faz o [diagnostico](#diagnostico), `10` abre o
+[Hermes Agent](#hermes-agent-opcional) (opcional) e `11` abre o
+[painel web](#acesso-pelo-navegador) com varios agentes. Para consultar
 versoes, execute `ia versoes`. Use `0` para voltar ao shell.
-
-## Acesso pelo navegador
-
-No Termux, execute:
-
-```sh
-ia web
-```
-
-Isso inicia um terminal Linux com menu em `http://127.0.0.1:7680` e, quando o
-EmbeddingGemma opcional estiver instalado, sua interface em
-`http://127.0.0.1:8085`. O terminal permite abrir os agentes instalados e
-continuar em pastas do Ubuntu. Para iniciar ou consultar um servico apenas:
-`ia web start terminal`, `ia web start embedding` ou `ia web status`. Encerre
-com `ia web stop`.
-
-As duas interfaces escutam **somente em 127.0.0.1** e nao aceitam conexoes de
-outros aparelhos no Wi-Fi. Nao altere o endereco de escuta para `0.0.0.0`.
-O instalador inclui `ttyd` no Linux e aciona `termux-wake-lock` automaticamente
-quando disponivel, evitando que o Android suspenda os servicos ao alternar para
-o navegador (`ia web stop` libera o wake-lock). Para habilitar o EmbeddingGemma,
-execute no Termux:
-
-```sh
-ia embeddinggemma install
-```
-
-Esse comando instala Python e as dependencias opcionais (`sentence-transformers`,
-`fastapi` e `uvicorn`) no Linux. Reserve alguns GiB; a primeira inferencia baixa
-o modelo (cerca de 1,5 GiB) e pode levar mais tempo. Busca de arquivos fica
-restrita a pasta atual de onde `ia web` foi iniciado.
 
 <details>
 <summary>Opcoes de instalacao</summary>
@@ -155,6 +131,99 @@ nao recebem o menu.
 
 </details>
 
+## Acesso pelo navegador
+
+No Termux, execute:
+
+```sh
+ia web
+```
+
+Isso inicia o **painel de agentes** e abre o link no navegador do aparelho. O
+link tem o formato `http://127.0.0.1:7690/<token>/`. Se o navegador nao abrir
+sozinho, copie o link exibido ou use `ia web abrir`. Quando o EmbeddingGemma
+opcional estiver instalado, sua interface sobe junto em `http://127.0.0.1:8085`.
+
+| Comando | O que faz |
+| --- | --- |
+| `ia web` | Inicia o painel (e o EmbeddingGemma, se instalado) |
+| `ia web abrir` | Inicia o painel e abre o link no navegador |
+| `ia web status` | Mostra o que esta ativo; `ia web status painel` inclui o link |
+| `ia web stop` | Encerra os servicos e libera o wake-lock |
+| `ia web start terminal` | Inicia so o terminal Linux com menu em `http://127.0.0.1:7680`, sem token |
+
+`start`, `stop` e `status` aceitam um alvo: `painel`, `terminal`, `embedding` ou
+`todos`; por exemplo, `ia web stop painel`. O terminal com menu so sobe quando
+pedido, porque nao tem token.
+
+### O que o painel oferece
+
+- **Varios agentes ao vivo.** Abra Copilot, Claude Code, Codex, Antigravity,
+  OpenCode, Hermes ou um terminal Linux. Cada um roda em uma sessao `tmux` propria
+  e aparece como um cartao com terminal interativo. Fechar a aba ou trocar de
+  aplicativo nao encerra o agente.
+- **Grade ou foco.** Veja os cartoes lado a lado ou amplie um deles, em **Ao vivo**
+  (terminais interativos) ou em **Previa** (so as ultimas linhas, mais leve).
+- **Um prompt para varios agentes.** Marque os agentes, escreva uma vez e envie a
+  todos com Ctrl+Enter. **Colar sem Enter** deixa o texto no terminal para voce
+  revisar antes. Ha modelos de prompt prontos.
+- **Pasta de trabalho.** O seletor navega apenas dentro da pasta de onde `ia web`
+  foi iniciado.
+- **Orquestrar e Historico.** Abas para [orquestrar](#orquestracao-de-agentes)
+  varios agentes e rever as execucoes anteriores.
+
+Cada agente abre com as permissoes e a conta normais da sua CLI; o Codex abre no
+modo [Pedir aprovacao](#codex-no-android). Sao ate 6 sessoes ao mesmo tempo, e o
+painel recusa novas quando a memoria livre fica abaixo de 512 MB.
+
+> [!IMPORTANT]
+> O painel escuta **somente em 127.0.0.1** e todo acesso exige o token do link.
+> Quem tiver o link controla os agentes e os terminais do painel: nao o
+> compartilhe nem o publique em capturas de tela. Para trocar o token, encerre o
+> painel e apague o arquivo; o proximo `ia web` gera outro.
+
+```sh
+ia web stop
+ia terminal -c 'rm -f ~/.local/share/termux-ai/web/token'
+ia web
+```
+
+<details>
+<summary>Sessoes, dois aparelhos e Android 12+</summary>
+
+- **As sessoes continuam depois de `ia web stop`**, de proposito, para nao
+  perder trabalho em andamento. Ao abrir o painel de novo, elas reaparecem. O
+  botao **✕** de um cartao encerra so aquele agente; para encerrar todos:
+  `ia terminal -c 'tmux -L termux-ai kill-server'`.
+- **Dois aparelhos ou janelas na mesma sessao.** Com telas de tamanhos
+  diferentes, o tmux mostra pontos (`·`) na area que sobra. Use uma tela por vez.
+- **Android 12 ou superior.** O sistema pode encerrar processos em segundo plano
+  do Termux (`signal 9`). O `ia web` aciona o wake-lock, mas se os agentes caem
+  quando o Termux fica em segundo plano, veja como
+  [desativar a restricao de processos fantasma](https://github.com/agnostic-apollo/Android-Docs/blob/master/en/docs/apps/processes/phantom-cached-and-empty-processes.md).
+
+</details>
+
+O painel, o terminal com menu e o EmbeddingGemma escutam **somente em
+127.0.0.1** e nao aceitam conexoes de outros aparelhos no Wi-Fi; nao altere o
+endereco de escuta para `0.0.0.0`. O instalador inclui `ttyd`, `tmux` e Node.js
+no Linux, e `ia web` aciona `termux-wake-lock` automaticamente quando disponivel,
+evitando que o Android suspenda os servicos ao alternar para o navegador
+(`ia web stop` libera o wake-lock).
+
+### EmbeddingGemma 2 (opcional)
+
+Para habilitar o EmbeddingGemma, execute no Termux:
+
+```sh
+ia embeddinggemma install
+```
+
+Esse comando instala Python e as dependencias opcionais (`sentence-transformers`,
+`fastapi` e `uvicorn`) no Linux. Reserve alguns GiB; a primeira inferencia baixa
+o modelo (cerca de 1,5 GiB) e pode levar mais tempo. Busca de arquivos fica
+restrita a pasta atual de onde `ia web` foi iniciado.
+
 ## Primeiro uso
 
 Conecte a conta de cada agente, seguindo o fluxo oficial no navegador ou no
@@ -167,6 +236,7 @@ terminal. As contas de outros agentes **nao sao copiadas automaticamente**.
 | Codex | `codex` | `codex login` |
 | Google Antigravity CLI | `antigravity` ou `agy` | Siga o fluxo ao abrir |
 | OpenCode | `opencode` | `opencode auth login` ou `/connect` na interface |
+| Hermes Agent (opcional) | `hermes` ou `ia hermes` | `ia hermes setup`; veja [Hermes Agent](#hermes-agent-opcional) |
 
 Se o navegador nao abrir, use o link exibido pelo agente. Planos, limites e
 cobranca dependem de cada provedor; este projeto nao fornece assinaturas ou
@@ -294,6 +364,85 @@ digite `/daemon` no Codex, como o proprio aviso indica. Os avisos sobre
 bubblewrap tambem sao esperados: instala-lo nao resolve, porque no PRoot ele
 nao isola de verdade.
 
+## Orquestracao de agentes
+
+Faca varios agentes trabalharem juntos na mesma tarefa, pela aba **Orquestrar**
+do [painel](#acesso-pelo-navegador) ou pelo Termux:
+
+```sh
+ia orquestrar comparar -a claude,copilot -j auto "Onde fica a validacao de login?"
+ia orquestrar pipeline -e planejar:claude,implementar:copilot,revisar:agy "Adicionar cache ao cliente HTTP"
+ia orquestrar maestro -a claude,copilot,opencode "Mapear o projeto e listar riscos"
+```
+
+| Modo | Como funciona |
+| --- | --- |
+| **Comparar** | Os agentes respondem a mesma tarefa em paralelo; um juiz opcional compara as respostas (`-j auto` escolhe o melhor disponivel) |
+| **Pipeline** | Linha de montagem de 2 a 6 etapas (planejar, implementar, revisar); cada etapa recebe a tarefa e o resultado da anterior |
+| **Maestro** | Um coordenador divide a tarefa em ate 6 subtarefas, os agentes as executam em paralelo e ele integra os resultados |
+
+> [!NOTE]
+> **Somente leitura, sempre.** Na orquestracao os agentes leem e analisam o
+> projeto, mas nao alteram arquivos nem executam comandos: uma etapa
+> "implementar" **propoe** o codigo no texto. Para aplicar uma proposta, abra o
+> agente na pasta do projeto e peca a alteracao, revisando cada passo.
+
+| Comando ou opcao | O que faz |
+| --- | --- |
+| `ia orquestrar agentes` | Lista os agentes e o que cada um consegue fazer |
+| `ia orquestrar historico` | Lista as ultimas execucoes (as 50 mais recentes ficam salvas) |
+| `ia orquestrar ver ID [--tudo]` | Mostra o resultado de uma execucao; `--tudo` inclui cada etapa |
+| `-d PASTA`, `-t SEGUNDOS`, `--json` | Pasta de trabalho (padrao: a atual), tempo limite por etapa (30 a 1800; padrao 600) e saida em JSON |
+
+A tarefa tambem pode vir da entrada padrao, como em
+`git diff | ia orquestrar comparar -a claude,copilot -j auto -`. O progresso vai
+para o stderr e o resultado final para o stdout. `ia orquestrar --ajuda` mostra
+todas as opcoes. Ate 4 agentes rodam ao mesmo tempo, e as execucoes ficam em
+`~/.local/share/termux-ai/runs` dentro do Linux.
+
+<details>
+<summary>Como cada agente fica em somente leitura</summary>
+
+Cada pedido comeca com uma instrucao de somente leitura e, alem disso, cada
+agente roda com as travas da propria CLI:
+
+| Agente | Trava |
+| --- | --- |
+| Copilot | `--deny-tool=write` e `--deny-tool=shell` |
+| Claude Code | Apenas as ferramentas Read, Grep e Glob, no modo `dontAsk` |
+| Codex | `exec -s read-only`; sem sandbox funcional no Android, ele pode nao conseguir ler arquivos (veja [Codex no Android](#codex-no-android)) |
+| Antigravity | Modo `plan` |
+| OpenCode | Agente `plan`, com edicao negada |
+| Hermes | Apenas as ferramentas `web` e `search`: nao le nem altera arquivos |
+
+O progresso e o resultado de cada etapa tambem aparecem no painel, na aba
+**Orquestrar**, com o historico na aba **Historico**.
+
+</details>
+
+## Hermes Agent (opcional)
+
+O [Hermes Agent](https://github.com/NousResearch/hermes-agent), da Nous
+Research, e o sexto agente do ambiente. Ele e **opcional e so e instalado quando
+voce pede**: o download tem cerca de 2 GB e a instalacao leva varios minutos,
+por isso `bash install.sh` nao o inclui.
+
+```sh
+ia atualizar hermes
+ia hermes setup
+ia hermes
+```
+
+`ia atualizar hermes` mostra o plano, pede confirmacao e roda o instalador
+oficial do Hermes no Linux; se ele ja estiver instalado, usa `hermes update`.
+`ia hermes setup` (ou `ia hermes model`) conecta um provedor de modelos: sem isso
+o Hermes nao responde. `ia hermes` abre o agente na pasta atual, assim como a
+opcao `10` do menu; sem a instalacao, o comando apenas avisa como instalar.
+
+No painel e na orquestracao, o Hermes usa so as ferramentas `web` e `search`:
+ele nao le nem altera os arquivos do projeto. Ele aparece em `ia versoes` e em
+`ia diagnostico` (versao e login, sem exibir chaves).
+
 ## Como funciona
 
 **Android + Termux** &rarr; **Menu ia e atalhos** &rarr; **Linux via PRoot**
@@ -304,7 +453,7 @@ nao isola de verdade.
 3. **Instala as CLIs oficiais:** instala as ausentes ou abaixo da versao validada, nunca rebaixa as mais novas e verifica os executaveis, sem pedir logins nem chamar modelos.
 4. **Cria os atalhos:** adiciona `ia` e os comandos dos agentes, com menu automatico opcional.
 
-O ambiente inclui **Git, GitHub CLI, ripgrep, nano e Node.js**. Os agentes rodam
+O ambiente inclui **Git, GitHub CLI, ripgrep, nano, Node.js, tmux e ttyd**. Os agentes rodam
 como o usuario Linux `node` (no Ubuntu adotado, como o root simulado do PRoot),
 sem root real no Android. A imagem base e
 `node:24-bookworm-slim`; nao e necessario instalar ou executar Docker.
@@ -322,15 +471,17 @@ ia atualizar
 ```
 
 `ia versoes` compara a versao instalada de cada agente com a mais recente
-publicada no npm e no manifesto oficial do Antigravity. `ia atualizar` mostra
-o plano, pede confirmacao e verifica cada agente com `--version` depois da
-instalacao. A opcao `8` do menu tambem atualiza os agentes.
+publicada no npm, no manifesto oficial do Antigravity e, para o Hermes, nas
+versoes do GitHub. `ia atualizar` mostra o plano, pede confirmacao e verifica
+cada agente com `--version` depois da instalacao. A opcao `8` do menu tambem
+atualiza os agentes.
 
 | Comando | O que faz |
 | --- | --- |
-| `ia versoes` | Mostra a versao instalada, a disponivel e a situacao dos cinco agentes |
-| `ia atualizar` | Atualiza os agentes desatualizados apos confirmacao |
+| `ia versoes` | Mostra a versao instalada, a disponivel e a situacao dos agentes, incluindo o Hermes opcional |
+| `ia atualizar` | Atualiza os agentes desatualizados apos confirmacao; nao instala o Hermes ausente |
 | `ia atualizar claude codex` | Limita a atualizacao aos agentes informados |
+| `ia atualizar hermes` | Instala o [Hermes Agent](#hermes-agent-opcional) (cerca de 2 GB) ou o atualiza |
 | `ia atualizar --yes` | Confirma o plano sem pergunta interativa |
 
 Feche os agentes antes de atualizar. Cada atualizacao reaproveita o local em
@@ -357,7 +508,9 @@ O instalador garante pelo menos Codex 0.159.3, Copilot 1.0.90, Claude Code
 2.1.286 e OpenCode 1.18.34, versoes validadas no Android. **Versoes iguais ou
 mais novas sao mantidas: reexecutar o instalador nunca rebaixa um agente.**
 Antigravity segue seu manifesto oficial. Atualizacoes dos fornecedores podem
-mudar a compatibilidade.
+mudar a compatibilidade. O Hermes Agent opcional tem a versao de referencia
+0.22.1 e so e instalado quando voce pede; com ele instalado, `ia atualizar`
+tambem o atualiza.
 
 Para conferir as versoes diretamente pelo Termux:
 
@@ -367,7 +520,10 @@ claude --version
 codex --version
 antigravity --version
 opencode --version
+hermes --version
 ```
+
+O ultimo comando so funciona com o Hermes instalado.
 
 No OpenCode, o instalador executa explicitamente apenas o pos-instalador oficial,
 sem liberar scripts globalmente no npm. O download do Antigravity verifica o
@@ -392,13 +548,14 @@ como o comando de login de um agente desconectado.
 | --- | --- |
 | Termux | Versoes do Android, Termux e PRoot-Distro, espaco livre e o Linux em uso |
 | Linux | Sistema, Node.js 22+, Git, acesso a internet e gravacao na pasta atual |
-| Agentes | Versao e login de cada agente, sem exibir contas, emails ou tokens |
-| Recursos locais | Situacao do EmbeddingGemma 2 (cache local) e dos servicos `ia web` |
+| Agentes | Versao e login de cada agente, sem exibir contas, emails ou tokens; o Hermes aparece como opcional enquanto nao for instalado |
+| Recursos locais | Situacao do EmbeddingGemma 2 (cache local) e dos servicos `ia web` (painel, terminal e embedding) |
 | Protecao | Se o sandbox do Codex funciona e os limites de isolamento do PRoot |
 
 O login e lido do estado local de cada CLI: `codex login status`,
-`claude auth status`, a configuracao do Copilot, `opencode auth list` e o token
-do Antigravity. Um token do Copilot em variavel de ambiente tambem conta como
+`claude auth status`, a configuracao do Copilot, `opencode auth list`, o token
+do Antigravity e, no Hermes, as chaves de provedor do `.env` dele ou
+`hermes auth list`. Um token do Copilot em variavel de ambiente tambem conta como
 login. Inclua a saida do diagnostico ao [relatar um problema](#ajuda).
 
 ## Instalacoes existentes
@@ -443,7 +600,7 @@ O `~/.bashrc` volta a versao anterior a adocao; o atual fica em
 s=~/.local/share/termux-ai
 if grep -qx 'name=ubuntu' "$s/linux.conf" 2>/dev/null; then
     ok=1
-    for t in ia codex copilot claude antigravity agy opencode embeddinggemma embedding; do
+    for t in ia codex copilot claude antigravity agy opencode hermes embeddinggemma embedding; do
         f="$PREFIX/bin/$t"
         b="$s/adopted/bin/$t"
         if [ -f "$s/bin/ia" ] && [ ! -L "$f" ] && cmp -s "$f" "$s/bin/ia"; then
@@ -510,6 +667,8 @@ Autenticar nao garante que toda ferramenta ou sandbox funcione no PRoot.
 - **Codex:** o sandbox nao funciona no PRoot. O menu e o atalho `codex` abrem o Codex no modo Pedir aprovacao; `codex exec` e `codex review` nao conseguem executar comandos. Veja [Codex no Android](#codex-no-android).
 - **OpenCode:** o login foi confirmado; ferramentas, plugins e tarefas dependem do provedor e das permissoes. O menu ainda usa a marcacao experimental para essa integracao.
 - **Antigravity:** o login Linux pode depender de Secret Service/D-Bus; persistencia de credenciais nao e garantida em todas as configuracoes PRoot.
+- **Hermes Agent:** e opcional e usa o instalador oficial do fornecedor (cerca de 2 GB); sem um provedor configurado com `ia hermes setup`, ele nao responde. Na orquestracao so usa as ferramentas `web` e `search`.
+- **Painel e orquestracao:** rodam dentro do Linux, com `tmux` e `ttyd`, em ate 6 sessoes. A orquestracao so le e propoe; nao aplica alteracoes. Com varios agentes abertos, a memoria do aparelho e o limite: o painel recusa novas sessoes com menos de 512 MB livres. Veja tambem as observacoes sobre Android 12+ em [Acesso pelo navegador](#acesso-pelo-navegador).
 - **Arquitetura:** um processador de 64 bits com Termux de 32 bits nao atende aos requisitos.
 - **Repositorios:** se a sua variante nao oferece PRoot-Distro 5.3.0+, nao misture repositorios para forcar a instalacao.
 - **Conflitos:** comandos dos agentes de outra origem nao sao substituidos. Para o menu Ubuntu manual, use a [adocao](#instalacoes-existentes).
@@ -571,8 +730,11 @@ cada comando ou edicao.
 Digite chaves somente no prompt oficial do agente. Nao publique credenciais,
 logs privados ou backups. No OpenCode, as credenciais ficam em
 `~/.local/share/opencode/auth.json`, dentro do Linux em que ele roda.
-O terminal web concede ao usuario da sessao os mesmos acessos que um shell
-Linux local; mantenha-o em `127.0.0.1` e encerre-o com `ia web stop` ao terminar.
+O terminal web com menu (`ia web start terminal`, sem token) e as sessoes do
+painel concedem ao usuario da sessao os mesmos acessos que um shell Linux local;
+mantenha-os em `127.0.0.1`, trate o link do painel como uma senha e encerre tudo
+com `ia web stop` ao terminar (as sessoes dos agentes seguem ativas ate voce
+encerra-las pelo painel ou com `ia terminal -c 'tmux -L termux-ai kill-server'`).
 
 <details>
 <summary>Onde ficam os dados e como fazer backup</summary>
@@ -600,18 +762,25 @@ os dados do ambiente.
 ## Desenvolvimento
 
 Os testes exigem Bash, Python 3.10+, Node.js 22+ e utilitarios GNU, incluindo
-`tar` e `sha512sum`.
+`tar` e `sha512sum`. Com `tmux` e `ttyd` instalados, os testes do painel tambem
+exercitam sessoes reais; sem eles, esses casos sao ignorados.
 
 ```sh
 python3 -m py_compile scripts/embeddinggemma_cli.py scripts/embeddinggemma_web.py
+for file in scripts/hub/*.mjs; do node --check "$file"; done
+node --test tests/hub/*.test.mjs
 bash tests/run.sh
-shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/add-opencode-ubuntu.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma-launcher.sh tests/run.sh
+shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/add-opencode-ubuntu.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma-launcher.sh scripts/hub/attach.sh tests/run.sh
 ```
 
 A suite verifica argumentos, conflitos, preservacao de configuracoes,
 repeticao da instalacao, validacao de downloads, consulta e atualizacao de
 versoes sem rebaixamento, adocao do Ubuntu manual, atualizacao do menu Ubuntu,
-diagnostico do ambiente e o modo Pedir aprovacao do Codex.
+diagnostico do ambiente, o modo Pedir aprovacao do Codex, a instalacao opcional
+do Hermes e o servico real do painel (token privado, ponte de terminal em
+loopback e rotacao do token). Os testes em `tests/hub` cobrem a API do painel,
+as sessoes tmux, a orquestracao (comparar, pipeline e maestro, sempre somente
+leitura) e a interface.
 Execute-a em Linux; no Android, rode-a dentro do Linux do PRoot com `ia terminal`.
 Antes de anunciar suporte a uma nova configuracao Android, teste instalacao,
 login e uma tarefa controlada em cada agente, sem publicar dados pessoais.

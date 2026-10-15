@@ -3,8 +3,17 @@ set -euo pipefail
 
 export PATH="$HOME/.local/bin:$PATH"
 web_dir="$HOME/.local/share/termux-ai/web"
+hub_dir="$HOME/.local/share/termux-ai/hub"
 mkdir -p "$web_dir"
 chmod 700 "$web_dir"
+
+panel_port="${TERMUX_AI_PANEL_PORT:-7690}"
+panel_ttyd_port="${TERMUX_AI_PANEL_TTYD_PORT:-7681}"
+panel_pattern='termux-ai/hub/server.mjs'
+panel_ttyd_pattern="ttyd -i 127.0.0.1 -p $panel_ttyd_port"
+terminal_pattern='ttyd -i lo -p 7680'
+embedding_pattern='embeddinggemma_web.py --host 127.0.0.1 --port 8085'
+token_pattern='^[0-9a-f]{32}$'
 
 fail() {
     printf 'WebUI: %s\n' "$*" >&2
@@ -38,6 +47,7 @@ start_service() {
             printf '%s iniciado em 127.0.0.1:%s (PID %s).\n' "$name" "$port" "$pid"
             return 0
         fi
+        kill -0 "$pid" 2>/dev/null || break
         sleep 1
     done
     printf 'Falha ao iniciar %s; log: %s\n' "$name" "$log_file" >&2
@@ -77,9 +87,94 @@ stop_service() {
     return 1
 }
 
+panel_token() {
+    local token_file="$web_dir/token" token=''
+    if [[ -f $token_file ]]; then
+        IFS= read -r token < "$token_file" || true
+    fi
+    if [[ ! $token =~ $token_pattern ]]; then
+        token="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+        [[ $token =~ $token_pattern ]] || fail 'Nao foi possivel gerar o token do painel.'
+        (umask 077 && printf '%s\n' "$token" > "$token_file.next")
+        mv -f -- "$token_file.next" "$token_file"
+    fi
+    printf '%s\n' "$token"
+}
+
+panel_url() {
+    printf 'http://127.0.0.1:%s/%s/\n' "$panel_port" "$1"
+}
+
+panel_ready() {
+    local token="$1"
+    for _ in {1..30}; do
+        if curl --fail --silent --max-time 2 --output /dev/null "http://127.0.0.1:$panel_port/$token/api/state"; then
+            return 0
+        fi
+        service_pid painel "$panel_pattern" >/dev/null || return 1
+        sleep 0.5
+    done
+    return 1
+}
+
+# A ponte de terminal so serve com o painel: se ele nao subiu, nao deixa o ttyd orfao.
+drop_panel_ttyd() {
+    stop_service painel-ttyd "$panel_ttyd_pattern" >/dev/null || true
+}
+
+start_panel() {
+    local token hub_file
+    command -v node >/dev/null 2>&1 || fail 'node nao encontrado no Linux. Execute novamente bash install.sh no Termux.'
+    command -v ttyd >/dev/null 2>&1 || fail 'ttyd nao encontrado no Linux. Execute novamente bash install.sh no Termux.'
+    for hub_file in server.mjs index.html attach.sh tmux.conf; do
+        [[ -f "$hub_dir/$hub_file" ]] \
+            || fail 'Componentes do painel ausentes no Linux. Execute novamente bash install.sh no Termux.'
+    done
+    if ! command -v tmux >/dev/null 2>&1; then
+        printf '%s\n' 'Aviso: tmux nao encontrado no Linux; o painel abre sem terminais ao vivo. Execute novamente bash install.sh no Termux.'
+    fi
+    token="$(panel_token)"
+    start_service painel-ttyd "$panel_ttyd_pattern" "$panel_ttyd_port" \
+        ttyd -i 127.0.0.1 -p "$panel_ttyd_port" -W -a -b "/$token/t" -m 0 -O \
+        -t fontSize=14 -t 'theme={"background":"#0d1117","foreground":"#e6edf3","cursor":"#58a6ff"}' \
+        -t disableLeaveAlert=true bash "$hub_dir/attach.sh"
+    if ! TERMUX_AI_HUB_ROOT="$PWD" TERMUX_AI_HUB_PORT="$panel_port" TERMUX_AI_HUB_TTYD_PORT="$panel_ttyd_port" \
+        start_service painel "$panel_pattern" "$panel_port" node "$hub_dir/server.mjs"; then
+        drop_panel_ttyd
+        return 1
+    fi
+    if ! panel_ready "$token"; then
+        if service_pid painel "$panel_pattern" >/dev/null; then
+            printf '%s\n' 'O painel esta ativo, mas nao respondeu com o token atual; se o token foi trocado, execute: ia web stop' >&2
+        else
+            printf 'O painel encerrou ao iniciar; log: %s\n' "$web_dir/painel.log" >&2
+            tail -n 20 -- "$web_dir/painel.log" >&2 || true
+            drop_panel_ttyd
+        fi
+        return 1
+    fi
+    printf 'Painel: %s\n' "$(panel_url "$token")"
+}
+
+# As sessoes tmux dos agentes sobrevivem ao painel de proposito: assim nenhum agente em andamento se perde.
+report_sessions() {
+    local count
+    command -v tmux >/dev/null 2>&1 || return 0
+    count="$(tmux -L termux-ai list-sessions 2>/dev/null | wc -l)" || count=0
+    if ((count > 0)); then
+        printf '%s sessao(oes) de agente seguem ativas em segundo plano; para encerrar todas: ia terminal -c "tmux -L termux-ai kill-server"\n' "$count"
+    fi
+}
+
+stop_panel() {
+    stop_service painel "$panel_pattern"
+    stop_service painel-ttyd "$panel_ttyd_pattern"
+    report_sessions
+}
+
 start_terminal() {
     command -v ttyd >/dev/null 2>&1 || fail 'ttyd nao encontrado no Linux. Instale com: apt-get install ttyd'
-    start_service terminal 'ttyd -i lo -p 7680' 7680 \
+    start_service terminal "$terminal_pattern" 7680 \
         ttyd -i lo -p 7680 -W -O -m 1 -t titleFixed='Termux AI' \
         /bin/bash "$HOME/.local/share/termux-ai/web/menu.sh"
 }
@@ -89,57 +184,69 @@ start_embedding() {
     [[ -x "$python" ]] || fail "Python do EmbeddingGemma nao encontrado: $python"
     "$python" -c 'import fastapi, sentence_transformers, uvicorn' \
         || fail 'Dependencias do EmbeddingGemma incompletas no ambiente virtual.'
-    TERMUX_AI_SEARCH_ROOT="$PWD" start_service embedding 'embeddinggemma_web.py --host 127.0.0.1 --port 8085' 8085 \
+    TERMUX_AI_SEARCH_ROOT="$PWD" start_service embedding "$embedding_pattern" 8085 \
         "$python" "$HOME/.local/share/termux-ai/tools/embeddinggemma_web.py" \
         --host 127.0.0.1 --port 8085
 }
 
-case "${1:-}" in
-    start)
-        case "${2:-both}" in
-            both)
-                start_terminal
-                if ! start_embedding; then
-                    printf '%s\n' 'O terminal continua ativo em http://127.0.0.1:7680'
-                    exit 1
-                fi
-                ;;
-            terminal) start_terminal ;;
-            embedding) start_embedding ;;
-            *) fail 'Uso interno: start [both|terminal|embedding]' ;;
-        esac
+start_default() {
+    start_panel
+    [[ $1 != todos ]] || start_terminal
+    if [[ -x "$HOME/.venv-ai/bin/python3" ]]; then
+        if ! start_embedding; then
+            printf '%s\n' 'Os demais servicos continuam ativos.'
+            return 1
+        fi
+    else
+        printf '%s\n' 'EmbeddingGemma nao instalado; para instalar: ia embeddinggemma install'
+    fi
+}
+
+# O link do painel carrega o token (e uma senha): so aparece quando o painel e pedido pelo nome.
+print_status() {
+    local name="$1" show_link="${2:-}" expected port pid
+    case "$name" in
+        painel) expected="$panel_pattern"; port="$panel_port" ;;
+        terminal) expected="$terminal_pattern"; port=7680 ;;
+        embedding) expected="$embedding_pattern"; port=8085 ;;
+    esac
+    if ! pid="$(service_pid "$name" "$expected")"; then
+        printf '%s parado\n' "$name"
+    elif [[ $name == painel && $show_link == link ]]; then
+        printf 'painel ativo: %s (PID %s)\n' "$(panel_url "$(panel_token)")" "$pid"
+    elif [[ $name == painel ]]; then
+        printf 'painel ativo (PID %s); para ver o link: ia web status painel\n' "$pid"
+    else
+        printf '%s ativo: http://127.0.0.1:%s (PID %s)\n' "$name" "$port" "$pid"
+    fi
+}
+
+action="${1:-}"
+case "$action" in
+    start) target="${2:-padrao}" ;;
+    stop|status) target="${2:-todos}" ;;
+    *) fail 'Uso interno: webui.sh {start|stop|status} [padrao|painel|terminal|embedding|todos]' ;;
+esac
+
+case "$action:$target" in
+    start:padrao|start:todos) start_default "$target" ;;
+    start:painel) start_panel ;;
+    start:terminal) start_terminal ;;
+    start:embedding) start_embedding ;;
+    stop:todos)
+        stop_service embedding "$embedding_pattern"
+        stop_service terminal "$terminal_pattern"
+        stop_panel
         ;;
-    stop)
-        case "${2:-both}" in
-            both)
-                stop_service embedding 'embeddinggemma_web.py --host 127.0.0.1 --port 8085'
-                stop_service terminal 'ttyd -i lo -p 7680'
-                ;;
-            terminal) stop_service terminal 'ttyd -i lo -p 7680' ;;
-            embedding) stop_service embedding 'embeddinggemma_web.py --host 127.0.0.1 --port 8085' ;;
-            *) fail 'Uso interno: stop [both|terminal|embedding]' ;;
-        esac
-        ;;
-    status)
-        case "${2:-both}" in
-            terminal) names=(terminal) ;;
-            embedding) names=(embedding) ;;
-            both) names=(terminal embedding) ;;
-            *) fail 'Uso interno: status [both|terminal|embedding]' ;;
-        esac
-        for name in "${names[@]}"; do
-            case "$name" in
-                terminal) expected='ttyd -i lo -p 7680'; port=7680 ;;
-                embedding) expected='embeddinggemma_web.py --host 127.0.0.1 --port 8085'; port=8085 ;;
-            esac
-            if pid="$(service_pid "$name" "$expected")"; then
-                printf '%s ativo: http://127.0.0.1:%s (PID %s)\n' "$name" "$port" "$pid"
-            else
-                printf '%s parado\n' "$name"
-            fi
+    stop:painel) stop_panel ;;
+    stop:terminal) stop_service terminal "$terminal_pattern" ;;
+    stop:embedding) stop_service embedding "$embedding_pattern" ;;
+    status:todos)
+        for name in painel terminal embedding; do
+            print_status "$name"
         done
         ;;
-    *)
-        fail 'Uso interno: webui.sh {start|stop|status} [both|terminal|embedding]'
-        ;;
+    status:painel) print_status painel link ;;
+    status:terminal|status:embedding) print_status "$target" ;;
+    *) fail "Alvo invalido para $action: $target" ;;
 esac

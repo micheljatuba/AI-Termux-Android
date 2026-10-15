@@ -10,6 +10,7 @@ display_name() {
         codex) printf '%s' 'Codex' ;;
         agy) printf '%s' 'Antigravity CLI' ;;
         opencode) printf '%s' 'OpenCode' ;;
+        hermes) printf '%s' 'Hermes Agent' ;;
         embeddinggemma) printf '%s' 'EmbeddingGemma 2' ;;
     esac
 }
@@ -18,7 +19,13 @@ status_label() {
     case "$1" in
         current) printf '%s' 'atualizado' ;;
         outdated) printf '%s' 'atualizacao disponivel' ;;
-        missing) printf '%s' 'nao instalado' ;;
+        missing)
+            if [[ $2 == hermes ]]; then
+                printf '%s' 'nao instalado (opcional)'
+            else
+                printf '%s' 'nao instalado'
+            fi
+            ;;
         unknown) printf '%s' 'sem consulta' ;;
     esac
 }
@@ -36,8 +43,8 @@ web_update_agents() {
     while IFS=$'\t' read -r marker tool installed latest status; do
         [[ $marker == @version ]] || continue
         rows+=("$tool $installed $latest $status")
-        printf '%-16s %-12s %-12s %s\n' "$(display_name "$tool")" "$installed" "$latest" "$(status_label "$status")"
-        if [[ $latest != - && ( $status == outdated || $status == missing ) ]]; then
+        printf '%-16s %-12s %-12s %s\n' "$(display_name "$tool")" "$installed" "$latest" "$(status_label "$status" "$tool")"
+        if [[ $latest != - && ( $status == outdated || ( $status == missing && $tool != hermes ) ) ]]; then
             plan+=("$tool $installed $latest")
         fi
     done <<< "$output"
@@ -72,8 +79,16 @@ web_show_diagnostics() {
     done <<< "$output"
 }
 
+web_hermes() {
+    if command -v hermes >/dev/null 2>&1; then
+        hermes
+    else
+        printf '%s\n' 'Hermes Agent e opcional e nao esta instalado (cerca de 2 GB). No Termux, rode: ia atualizar hermes'
+    fi
+}
+
 while true; do
-    printf '\nTermux AI - Linux\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (Pedir aprovacao)\n4. Terminal Linux\n5. Google Antigravity CLI\n6. OpenCode\n7. EmbeddingGemma 2 (local, opcional)\n8. Versoes e atualizacoes dos agentes\n9. Diagnostico do ambiente\n0. Sair\n\n'
+    printf '\nTermux AI - Linux\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (Pedir aprovacao)\n4. Terminal Linux\n5. Google Antigravity CLI\n6. OpenCode\n7. EmbeddingGemma 2 (local, opcional)\n8. Versoes e atualizacoes dos agentes\n9. Diagnostico do ambiente\n10. Hermes Agent (opcional)\n0. Sair\n\n'
     if ! read -r -p 'Escolha: ' selection; then
         exit 0
     fi
@@ -87,6 +102,7 @@ while true; do
         7) embeddinggemma || true ;;
         8) web_update_agents || true ;;
         9) web_show_diagnostics || true ;;
+        10) web_hermes || true ;;
         0) exit 0 ;;
         *) printf '%s\n' 'Opcao invalida.' >&2 ;;
     esac

@@ -15,11 +15,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Install ShellCheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Install ShellCheck, tmux and ttyd
+        run: sudo apt-get update && sudo apt-get install -y shellcheck tmux ttyd
       - name: Check shell scripts
-        run: shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/add-opencode-ubuntu.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma-launcher.sh tests/run.sh
+        run: shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/add-opencode-ubuntu.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma-launcher.sh scripts/hub/attach.sh tests/run.sh
       - name: Check Python scripts
         run: python3 -m py_compile scripts/embeddinggemma_cli.py scripts/embeddinggemma_web.py
+      - name: Check Node scripts
+        run: for file in scripts/hub/*.mjs; do node --check "$file"; done
+      - name: Run hub tests
+        run: node --test tests/hub/*.test.mjs
       - name: Run offline tests
         run: bash tests/run.sh

@@ -5,3 +5,7 @@
 /bin/ia text eol=lf
 *.md text eol=lf
 *.yml text eol=lf
+*.mjs text eol=lf
+*.html text eol=lf
+*.conf text eol=lf
+*.json text eol=lf

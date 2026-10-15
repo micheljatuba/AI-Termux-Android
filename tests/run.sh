@@ -4,7 +4,16 @@ set -euo pipefail
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 setup_script="$project_root/scripts/setup-linux.sh"
 test_root="$(mktemp -d)"
-trap 'rm -rf -- "$test_root"' EXIT
+cleanup_tests() {
+    if [[ -n ${port_blocker:-} ]]; then
+        kill "$port_blocker" 2> /dev/null || true
+    fi
+    if [[ -f ${panel_state:-/nonexistent}/webui.sh ]]; then
+        run_panel_webui stop todos > /dev/null 2>&1 || true
+    fi
+    rm -rf -- "$test_root"
+}
+trap cleanup_tests EXIT
 mkdir -p "$test_root/bin" "$test_root/project with spaces" "$test_root/launcher-home"
 export HOME="$test_root/launcher-home"
 export TERMUX_AI_TEST_ARGS="$test_root/arguments"
@@ -35,6 +44,30 @@ for index in "${!arguments[@]}"; do
                 if [[ " ${TERMUX_AI_TEST_UPDATE_FAILURES:-} " == *" ${arguments[index + 3]:-} "* ]]; then
                     exit 1
                 fi
+                ;;
+            start)
+                web_target="${arguments[index + 3]:-}"
+                case "$web_target" in
+                    padrao) web_started=painel ;;
+                    todos) web_started='painel terminal embedding' ;;
+                    *) web_started="$web_target" ;;
+                esac
+                for web_name in ${TERMUX_AI_TEST_WEB_STARTED-$web_started}; do
+                    case "$web_name" in
+                        painel)
+                            printf 'painel-ttyd iniciado em 127.0.0.1:7681 (PID 11).\n'
+                            printf 'painel iniciado em 127.0.0.1:7690 (PID 12).\n'
+                            printf 'Painel: http://127.0.0.1:7690/00112233445566778899aabbccddeeff/\n'
+                            ;;
+                        painel-morto)
+                            printf 'painel-ttyd iniciado em 127.0.0.1:7681 (PID 11).\n'
+                            printf 'painel iniciado em 127.0.0.1:7690 (PID 12).\n'
+                            ;;
+                        terminal) printf 'terminal iniciado em 127.0.0.1:7680 (PID 13).\n' ;;
+                        embedding) printf 'embedding iniciado em 127.0.0.1:8085 (PID 14).\n' ;;
+                    esac
+                done
+                exit "${TERMUX_AI_TEST_WEB_EXIT:-0}"
                 ;;
         esac
         exit 0
@@ -80,7 +113,7 @@ assert_equal "${actual_args[14]}" '"quoted"' 'preserves quotes'
 assert_equal "${actual_args[15]}" '' 'preserves empty arguments'
 printf '%s\n' 'PASS launcher argument transport'
 
-for tool_name in codex copilot claude antigravity agy opencode embeddinggemma embedding; do
+for tool_name in codex copilot claude antigravity agy opencode hermes embeddinggemma embedding; do
     cp "$project_root/bin/ia" "$test_root/bin/$tool_name"
     bash "$test_root/bin/$tool_name" --version
     mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
@@ -155,6 +188,64 @@ done
 rm "$launcher_state/linux.conf"
 printf '%s\n' 'PASS Linux selection from the installer configuration'
 
+fake_guest="$test_root/fake-guest"
+mkdir -p "$fake_guest/.local/bin" "$fake_guest/.local/share/termux-ai/hub"
+run_in_fake_guest() {
+    local guest_script="$1"
+    shift
+    env -i HOME="$fake_guest" PATH=/usr/bin:/bin bash -c "$guest_script" termux-ai "$@"
+}
+bash "$project_root/bin/ia" hermes chat -q 'two words'
+mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+assert_equal "${actual_args[11]}" hermes 'selects the optional Hermes Agent'
+assert_equal "${actual_args[12]}" chat 'preserves the Hermes subcommand'
+assert_equal "${actual_args[14]}" 'two words' 'preserves the Hermes prompt'
+launch_script="${actual_args[9]}"
+launch_status=0
+run_in_fake_guest "$launch_script" hermes --version > "$test_root/hermes-missing.log" 2>&1 || launch_status=$?
+assert_equal "$launch_status" 127 'a missing Hermes ends with the command-not-found status'
+grep -Fq 'ia atualizar hermes' "$test_root/hermes-missing.log"
+printf '#!/usr/bin/env bash\nprintf "guest=%%s args=%%s\\n" "$TERMUX_AI_GUEST" "$*"\n' > "$fake_guest/.local/bin/hermes"
+chmod 755 "$fake_guest/.local/bin/hermes"
+assert_equal "$(run_in_fake_guest "$launch_script" hermes chat -q 'two words')" 'guest=1 args=chat -q two words' \
+    'runs an installed Hermes inside the Linux guest'
+
+bash "$project_root/bin/ia" orquestrar comparar --agentes claude,copilot 'two words'
+mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+assert_equal "${actual_args[2]}" --user 'runs the orchestrator as the dedicated user'
+assert_equal "${actual_args[3]}" node 'uses the image non-root user for the orchestrator'
+assert_equal "${actual_args[4]}" --work-dir 'preserves the directory for the orchestrator'
+assert_equal "${actual_args[5]}" "$PWD" 'uses the current directory for the orchestrator'
+assert_equal "${actual_args[7]}" /bin/bash 'runs the orchestrator through the Linux shell'
+assert_equal "${actual_args[8]}" -lc 'loads the Linux login profile for the orchestrator'
+assert_equal "${actual_args[11]}" comparar 'passes the orchestration mode'
+assert_equal "${actual_args[12]}" --agentes 'passes the orchestration options'
+assert_equal "${actual_args[13]}" claude,copilot 'passes the orchestration agents'
+assert_equal "${actual_args[14]}" 'two words' 'keeps the orchestration task as one argument'
+launch_script="${actual_args[9]}"
+launch_status=0
+run_in_fake_guest "$launch_script" comparar > "$test_root/orchestrate-missing.log" 2>&1 || launch_status=$?
+assert_equal "$launch_status" 1 'stops when the panel components are missing'
+grep -Fq 'Componentes do painel ausentes' "$test_root/orchestrate-missing.log"
+: > "$fake_guest/.local/share/termux-ai/hub/cli.mjs"
+printf '#!/usr/bin/env bash\nprintf "guest=%%s node %%s\\n" "$TERMUX_AI_GUEST" "$*"\n' > "$fake_guest/.local/bin/node"
+chmod 755 "$fake_guest/.local/bin/node"
+assert_equal "$(run_in_fake_guest "$launch_script" comparar --agentes claude,copilot 'two words')" \
+    "guest=1 node $fake_guest/.local/share/termux-ai/hub/cli.mjs comparar --agentes claude,copilot two words" \
+    'runs the orchestrator command inside the Linux guest'
+rm -f "$TERMUX_AI_TEST_ARGS"
+expect_failure 'ia orquestrar ran inside the Linux guest' env TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" orquestrar comparar
+grep -Fq 'Use ia orquestrar no Termux, fora do Linux.' "$test_root/expected-failure.log"
+test ! -e "$TERMUX_AI_TEST_ARGS" || fail_test 'ia orquestrar called PRoot from inside the Linux guest'
+printf 'name=ubuntu\nuser=root\n' > "$launcher_state/linux.conf"
+bash "$project_root/bin/ia" orquestrar historico
+mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+assert_equal "${actual_args[1]}" ubuntu 'uses the adopted Ubuntu for the orchestrator'
+assert_equal "${actual_args[2]}" --work-dir 'keeps the default root user of the adopted Ubuntu for the orchestrator'
+assert_equal "${actual_args[9]}" historico 'passes the orchestrator subcommand in the adopted Ubuntu'
+rm "$launcher_state/linux.conf"
+printf '%s\n' 'PASS Hermes and the orchestrator run inside the Linux guest only'
+
 printf 'name=ubuntu\nuser=root\n' > "$launcher_state/linux.conf"
 export TERMUX_AI_TEST_WAKELOCK_LOG="$test_root/wakelock.log"
 cat > "$test_root/bin/termux-wake-lock" <<'MOCK'
@@ -176,23 +267,90 @@ assert_equal "${actual_args[9]}" status 'requests WebUI status'
 assert_equal "${actual_args[10]}" embedding 'limits status to EmbeddingGemma'
 assert_equal "$(< "$TERMUX_AI_TEST_STAGE_VERBOSE")" '-1' 'keeps PRoot startup quiet for WebUI'
 test ! -s "$TERMUX_AI_TEST_WAKELOCK_LOG"
-bash "$project_root/bin/ia" web > "$test_root/web-start.log"
+bash "$project_root/bin/ia" web status > /dev/null
 mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
-assert_equal "${actual_args[9]}" start 'starts both WebUI services by default'
-assert_equal "${actual_args[10]}" both 'starts terminal and EmbeddingGemma by default'
-grep -Fq 'http://127.0.0.1:7680' "$test_root/web-start.log"
-grep -Fq 'http://127.0.0.1:8085' "$test_root/web-start.log"
-assert_equal "$(< "$TERMUX_AI_TEST_WAKELOCK_LOG")" 'lock' 'acquires termux-wake-lock when starting WebUI'
+assert_equal "${actual_args[10]}" todos 'reports every WebUI service by default'
+
+mkdir -p "$test_root/web-tmp" "$test_root/open-log"
+export TERMUX_AI_TEST_OPEN_LOG="$test_root/open-log/urls"
+cat > "$test_root/bin/termux-open-url" <<'MOCK'
+#!/usr/bin/env bash
+printf '%s\n' "$1" >> "$TERMUX_AI_TEST_OPEN_LOG"
+MOCK
+chmod +x "$test_root/bin/termux-open-url"
+panel_link='http://127.0.0.1:7690/00112233445566778899aabbccddeeff/'
+TMPDIR="$test_root/web-tmp" bash "$project_root/bin/ia" web > "$test_root/web-start.log"
+mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+assert_equal "${actual_args[9]}" start 'starts the default WebUI services'
+assert_equal "${actual_args[10]}" padrao 'starts the panel by default'
+grep -Fxq "Painel: $panel_link" "$test_root/web-start.log"
+grep -Fq 'token de acesso' "$test_root/web-start.log"
+if grep -Fq '7680' "$test_root/web-start.log" || grep -Fq '8085' "$test_root/web-start.log"; then
+    fail_test 'the default start reported services that were not started'
+fi
+test ! -e "$TERMUX_AI_TEST_OPEN_LOG" || fail_test 'opened the browser without a terminal'
+assert_equal "$(ls -A "$test_root/web-tmp")" '' 'removes the start log that holds the panel token link'
+assert_equal "$(< "$TERMUX_AI_TEST_WAKELOCK_LOG")" 'lock' 'acquires termux-wake-lock when starting the panel'
+TERMUX_AI_TEST_WEB_STARTED='painel embedding' bash "$project_root/bin/ia" web start todos > "$test_root/web-all.log"
+grep -Fq 'EmbeddingGemma: http://127.0.0.1:8085' "$test_root/web-all.log"
+grep -Fq 'Painel: ' "$test_root/web-all.log"
+bash "$project_root/bin/ia" web start terminal > "$test_root/web-terminal.log"
+grep -Fxq 'Terminal: http://127.0.0.1:7680' "$test_root/web-terminal.log"
+if grep -Fq 'Painel:' "$test_root/web-terminal.log" || grep -Fq 'token' "$test_root/web-terminal.log"; then
+    fail_test 'terminal start mentioned the panel link'
+fi
+assert_equal "$(grep -c '^lock$' "$TERMUX_AI_TEST_WAKELOCK_LOG")" 3 'refreshes the wake-lock on every start'
 bash "$project_root/bin/ia" web stop embedding
-assert_equal "$(< "$TERMUX_AI_TEST_WAKELOCK_LOG")" 'lock' 'keeps wake-lock while terminal WebUI remains active'
 bash "$project_root/bin/ia" web stop terminal
-assert_equal "$(< "$TERMUX_AI_TEST_WAKELOCK_LOG")" $'lock\nunlock' 'releases wake-lock when last WebUI service stops'
+assert_equal "$(grep -c '^unlock$' "$TERMUX_AI_TEST_WAKELOCK_LOG" || true)" 0 'keeps wake-lock while the panel remains active'
+bash "$project_root/bin/ia" web stop painel
+assert_equal "$(tail -n 1 "$TERMUX_AI_TEST_WAKELOCK_LOG")" unlock 'releases wake-lock when the last WebUI service stops'
+if compgen -G "$launcher_state/web/active.*" > /dev/null; then
+    fail_test 'left an active marker after every service stopped'
+fi
+
+bash "$project_root/bin/ia" web abrir > "$test_root/web-open.log"
+mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+assert_equal "${actual_args[9]}" start 'opens the panel by starting it'
+assert_equal "${actual_args[10]}" painel 'opens only the panel'
+assert_equal "$(< "$TERMUX_AI_TEST_OPEN_LOG")" "$panel_link" 'opens the panel link in the browser'
+grep -Fq 'Abrindo o painel no navegador' "$test_root/web-open.log"
+rm -f "$TERMUX_AI_TEST_OPEN_LOG"
+rm "$test_root/bin/termux-open-url"
+bash "$project_root/bin/ia" web abrir > "$test_root/web-open.log"
+grep -Fq 'Abra o link do painel' "$test_root/web-open.log"
+bash "$project_root/bin/ia" web stop
+
+: > "$TERMUX_AI_TEST_WAKELOCK_LOG"
+partial_status=0
+TERMUX_AI_TEST_WEB_STARTED=painel TERMUX_AI_TEST_WEB_EXIT=7 TMPDIR="$test_root/web-tmp" bash "$project_root/bin/ia" web start todos > "$test_root/web-partial.log" 2>&1 || partial_status=$?
+assert_equal "$partial_status" 7 'preserves the service controller exit status'
+assert_equal "$(< "$TERMUX_AI_TEST_WAKELOCK_LOG")" 'lock' 'keeps wake-lock for services that started before a failure'
+if grep -Fq 'Acesso restrito' "$test_root/web-partial.log"; then
+    fail_test 'a failed start was reported as ready'
+fi
+assert_equal "$(ls -A "$test_root/web-tmp")" '' 'removes the start log after a failure'
+bash "$project_root/bin/ia" web stop
+assert_equal "$(tail -n 1 "$TERMUX_AI_TEST_WAKELOCK_LOG")" unlock 'releases wake-lock after stopping everything'
+
+# "iniciado em" sai antes de o servidor abrir a porta: sem a linha do link o painel morreu e nao pode prender o wake-lock.
+: > "$TERMUX_AI_TEST_WAKELOCK_LOG"
+dead_status=0
+TERMUX_AI_TEST_WEB_STARTED=painel-morto TERMUX_AI_TEST_WEB_EXIT=1 bash "$project_root/bin/ia" web start > "$test_root/web-dead.log" 2>&1 || dead_status=$?
+assert_equal "$dead_status" 1 'reports a panel that died while starting'
+test ! -s "$TERMUX_AI_TEST_WAKELOCK_LOG" || fail_test 'took the wake-lock for a panel that never answered'
+if compgen -G "$launcher_state/web/active.*" > /dev/null; then
+    fail_test 'marked a panel that never answered as active'
+fi
+
 expect_failure 'WebUI ran inside the Linux guest' env TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" web status
 grep -q 'Use ia web no Termux' "$test_root/expected-failure.log"
-expect_failure 'unknown WebUI target was accepted' bash "$project_root/bin/ia" web start network
-grep -q 'Uso: ia web' "$test_root/expected-failure.log"
+for invalid_web in 'start network' 'start padrao' 'abrir terminal' 'bogus' 'start painel extra'; do
+    expect_failure "invalid WebUI arguments were accepted: $invalid_web" bash "$project_root/bin/ia" web $invalid_web
+    grep -q 'Uso: ia web' "$test_root/expected-failure.log"
+done
 rm "$launcher_state/linux.conf" "$test_root/bin/termux-wake-lock" "$test_root/bin/termux-wake-unlock"
-printf '%s\n' 'PASS local WebUI dispatch, service management, wake-lock and loopback links'
+printf '%s\n' 'PASS local WebUI dispatch, panel link, service management, wake-lock and loopback links'
 
 printf 'name=ubuntu\nuser=root\n' > "$launcher_state/linux.conf"
 : > "$TERMUX_AI_TEST_CALLS"
@@ -217,9 +375,128 @@ cmp "$assets_home/.local/share/termux-ai/tools/embeddinggemma_cli.py" "$project_
 cmp "$assets_home/.local/share/termux-ai/tools/embeddinggemma_web.py" "$project_root/scripts/embeddinggemma_web.py"
 cmp "$assets_home/.local/bin/embeddinggemma" "$project_root/scripts/embeddinggemma-launcher.sh"
 assert_equal "$(readlink "$assets_home/.local/bin/embedding")" embeddinggemma 'installs the guest compatibility link'
+for hub_file in util.mjs agents.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
+    cmp "$assets_home/.local/share/termux-ai/hub/$hub_file" "$project_root/scripts/hub/$hub_file"
+done
 printf '%s\n' 'PASS Linux guest assets and optional command installation'
 
-for tool_name in claude antigravity agy opencode; do
+# Painel real: Node e curl de verdade (fora do mock do teste) e um ttyd de mentira que so guarda os argumentos.
+real_path="${PATH#"$test_root/bin:"}"
+panel_home="$test_root/panel-home"
+panel_state="$panel_home/.local/share/termux-ai"
+panel_work="$test_root/panel-work"
+mkdir -p "$panel_home" "$panel_work"
+HOME="$panel_home" bash "$setup_script" install-assets "$project_root"
+export TERMUX_AI_TEST_TTYD_ARGS="$test_root/ttyd-args"
+cat > "$panel_home/.local/bin/ttyd" <<'MOCK'
+#!/usr/bin/env bash
+trap 'exit 0' TERM
+printf '%s\n' "$*" > "$TERMUX_AI_TEST_TTYD_ARGS"
+while :; do
+    sleep 1 &
+    wait $!
+done
+MOCK
+chmod 755 "$panel_home/.local/bin/ttyd"
+free_port() {
+    env PATH="$real_path" node -e 'const server = require("node:net").createServer().listen(0, "127.0.0.1", () => { console.log(server.address().port); server.close(); });'
+}
+panel_port="$(free_port)"
+panel_ttyd_port="$(free_port)"
+while [[ $panel_ttyd_port == "$panel_port" ]]; do
+    panel_ttyd_port="$(free_port)"
+done
+run_panel_webui() {
+    (cd "$panel_work" && env HOME="$panel_home" PATH="$real_path" TERMUX_AI_PANEL_PORT="$panel_port" \
+        TERMUX_AI_PANEL_TTYD_PORT="$panel_ttyd_port" bash "$panel_state/webui.sh" "$@")
+}
+panel_curl() {
+    env PATH="$real_path" curl --silent --max-time 5 "$@"
+}
+panel_status_code() {
+    panel_curl --output /dev/null --write-out '%{http_code}' "$1" || true
+}
+
+assert_equal "$(run_panel_webui status | tr '\n' ' ')" 'painel parado terminal parado embedding parado ' 'reports every WebUI service as stopped'
+if ! panel_out="$(run_panel_webui start painel 2>&1)"; then
+    printf '%s\n' "$panel_out" >&2
+    fail_test 'the panel did not start'
+fi
+panel_token="$(< "$panel_state/web/token")"
+[[ $panel_token =~ ^[0-9a-f]{32}$ ]] || fail_test 'the panel token is not 32 hexadecimal characters'
+panel_url="http://127.0.0.1:$panel_port/$panel_token/"
+grep -Fxq "Painel: $panel_url" <<< "$panel_out" || fail_test "the panel link is missing: $panel_out"
+grep -Fq "painel-ttyd iniciado em 127.0.0.1:$panel_ttyd_port" <<< "$panel_out"
+grep -Fq "painel iniciado em 127.0.0.1:$panel_port" <<< "$panel_out"
+assert_equal "$(stat -c %a "$panel_state/web/token")" 600 'keeps the panel token private'
+assert_equal "$(stat -c %a "$panel_state/web")" 700 'keeps the web state folder private'
+grep -Fq -- "-i 127.0.0.1 -p $panel_ttyd_port -W -a -b /$panel_token/t -m 0 -O " "$TERMUX_AI_TEST_TTYD_ARGS" \
+    || fail_test "the terminal bridge is not bound to loopback behind the token: $(< "$TERMUX_AI_TEST_TTYD_ARGS")"
+grep -Fq -- " bash $panel_state/hub/attach.sh" "$TERMUX_AI_TEST_TTYD_ARGS" || fail_test 'the terminal bridge does not attach to tmux sessions'
+assert_equal "$(panel_status_code "$panel_url")" 200 'serves the panel page behind the token'
+assert_equal "$(panel_status_code "http://127.0.0.1:$panel_port/${panel_token}x/api/state")" 404 'hides the panel behind a wrong token'
+assert_equal "$(panel_status_code "http://127.0.0.1:$panel_port/")" 404 'hides the panel without a token'
+panel_agents="$(panel_curl "${panel_url}api/state" | env PATH="$real_path" node -e 'let text = ""; process.stdin.on("data", (chunk) => { text += chunk; }).on("end", () => { console.log(JSON.parse(text).agents.map((agent) => agent.id).join(",")); });')"
+assert_equal "$panel_agents" 'copilot,claude,codex,agy,opencode,hermes,shell' 'offers every agent, Hermes included'
+
+panel_again="$(run_panel_webui start painel)"
+grep -Fq 'painel ja esta ativo' <<< "$panel_again"
+grep -Fxq "Painel: $panel_url" <<< "$panel_again" || fail_test 'a second start changed the panel link'
+grep -Fq "painel ativo: $panel_url" <<< "$(run_panel_webui status painel)" || fail_test 'the status does not show the panel link'
+panel_overview="$(run_panel_webui status)"
+grep -Fq 'painel ativo (PID' <<< "$panel_overview" || fail_test "the overview does not report the active panel: $panel_overview"
+if grep -Fq "$panel_token" <<< "$panel_overview"; then
+    fail_test 'the status overview leaked the panel token'
+fi
+panel_stopped="$(run_panel_webui stop painel)"
+grep -Fxq 'painel encerrado.' <<< "$panel_stopped"
+grep -Fxq 'painel-ttyd encerrado.' <<< "$panel_stopped"
+assert_equal "$(run_panel_webui status painel)" 'painel parado' 'reports the stopped panel'
+assert_equal "$(panel_status_code "$panel_url")" 000 'stops answering after the panel stops'
+
+env PATH="$real_path" node -e 'require("node:net").createServer().listen(Number(process.argv[1]), "127.0.0.1");' "$panel_port" &
+port_blocker=$!
+for _ in {1..40}; do
+    if (exec 3<> "/dev/tcp/127.0.0.1/$panel_port") 2> /dev/null; then
+        break
+    fi
+    sleep 0.25
+done
+expect_failure 'a busy panel port was ignored' run_panel_webui start painel
+grep -Eq 'Falha ao iniciar painel|O painel encerrou ao iniciar' "$test_root/expected-failure.log"
+[[ ! -e "$panel_state/web/painel-ttyd.pid" ]] || fail_test 'left the terminal bridge running after the panel failed to start'
+assert_equal "$(run_panel_webui status painel)" 'painel parado' 'reports the panel that never started as stopped'
+kill "$port_blocker"
+wait "$port_blocker" 2> /dev/null || true
+unset port_blocker
+run_panel_webui stop todos > /dev/null
+
+mv "$panel_state/hub/index.html" "$panel_state/hub/index.html.bak"
+expect_failure 'the panel started without its page' run_panel_webui start painel
+grep -Fq 'Componentes do painel ausentes' "$test_root/expected-failure.log"
+mv "$panel_state/hub/index.html.bak" "$panel_state/hub/index.html"
+expect_failure 'an unknown WebUI target was accepted' run_panel_webui start bogus
+grep -Fq 'Alvo invalido para start: bogus' "$test_root/expected-failure.log"
+expect_failure 'an unknown WebUI action was accepted' run_panel_webui frobnicate
+grep -Fq 'Uso interno' "$test_root/expected-failure.log"
+
+old_panel_token="$panel_token"
+run_panel_webui start painel > /dev/null
+rm "$panel_state/web/token"
+expect_failure 'the running panel accepted a rotated token' run_panel_webui start painel
+grep -Fq 'nao respondeu com o token atual' "$test_root/expected-failure.log"
+run_panel_webui stop painel > /dev/null
+panel_out="$(run_panel_webui start painel)"
+panel_token="$(< "$panel_state/web/token")"
+[[ $panel_token != "$old_panel_token" ]] || fail_test 'the panel token was not rotated'
+grep -Fxq "Painel: http://127.0.0.1:$panel_port/$panel_token/" <<< "$panel_out" || fail_test 'the rotated panel link is missing'
+run_panel_webui stop todos > /dev/null
+if compgen -G "$panel_state/web/*.pid" > /dev/null; then
+    fail_test 'left a service marker after stopping everything'
+fi
+printf '%s\n' 'PASS real panel service: private token, loopback terminal bridge, restarts, port conflicts and token rotation'
+
+for tool_name in claude antigravity agy opencode hermes; do
     if TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" "$tool_name" > "$test_root/nested.log" 2>&1; then
         printf '%s\n' 'FAIL nested launcher was accepted' >&2
         exit 1
@@ -237,6 +514,9 @@ grep -q 'OpenCode:' "$test_root/help.log"
 grep -q 'ia versoes' "$test_root/help.log"
 grep -q 'ia atualizar' "$test_root/help.log"
 grep -q 'ia diagnostico' "$test_root/help.log"
+grep -q 'ia orquestrar' "$test_root/help.log"
+grep -q 'ia web' "$test_root/help.log"
+grep -q 'Hermes Agent: opcional' "$test_root/help.log"
 grep -q 'Pedir aprovacao' "$test_root/help.log"
 if bash "$project_root/bin/ia" unknown > /dev/null 2>&1; then
     printf '%s\n' 'FAIL unknown command was accepted' >&2
@@ -379,6 +659,36 @@ grep -q 'fora do Linux' "$test_root/expected-failure.log"
 test ! -e "$TERMUX_AI_TEST_ARGS"
 printf '%s\n' 'PASS maintenance commands validate their environment'
 
+printf '%s\n' \
+    $'@version\tcopilot\t1.0.91\t1.0.91\tcurrent' \
+    $'@version\thermes\t-\t0.22.1\tmissing' \
+    > "$TERMUX_AI_TEST_VERSIONS"
+bash "$project_root/bin/ia" versoes > "$test_root/versions-hermes.log"
+grep -Eq '^Hermes Agent +- +0\.22\.1 +nao instalado \(opcional\)$' "$test_root/versions-hermes.log"
+grep -Fq 'Hermes Agent (opcional, cerca de 2 GB): ia atualizar hermes' "$test_root/versions-hermes.log"
+if grep -Fq 'Para atualizar: ia atualizar' "$test_root/versions-hermes.log"; then
+    fail_test 'a missing optional Hermes was offered as a general update'
+fi
+: > "$TERMUX_AI_TEST_UPDATES"
+bash "$project_root/bin/ia" atualizar --yes > "$test_root/update-hermes-none.log"
+grep -q 'Nenhuma atualizacao disponivel' "$test_root/update-hermes-none.log"
+test ! -s "$TERMUX_AI_TEST_UPDATES"
+expect_failure 'Hermes installation ran without confirmation' bash "$project_root/bin/ia" atualizar hermes < /dev/null
+grep -Fq 'cerca de 2 GB' "$test_root/expected-failure.log"
+test ! -s "$TERMUX_AI_TEST_UPDATES"
+bash "$project_root/bin/ia" atualizar --yes hermes > "$test_root/update-hermes.log"
+assert_equal "$(< "$TERMUX_AI_TEST_UPDATES")" 'hermes 0.22.1' 'installs Hermes only when it is requested'
+grep -Fq 'Hermes Agent: o download tem cerca de 2 GB' "$test_root/update-hermes.log"
+printf '%s\n' $'@version\thermes\t0.22.0\t0.22.1\toutdated' > "$TERMUX_AI_TEST_VERSIONS"
+: > "$TERMUX_AI_TEST_UPDATES"
+bash "$project_root/bin/ia" atualizar --yes > "$test_root/update-hermes-installed.log"
+assert_equal "$(< "$TERMUX_AI_TEST_UPDATES")" 'hermes 0.22.1' 'updates an installed Hermes with the other agents'
+if grep -Fq 'cerca de 2 GB' "$test_root/update-hermes-installed.log"; then
+    fail_test 'warned about a large download for an installed Hermes'
+fi
+grep -Fq 'Para atualizar: ia atualizar' <(bash "$project_root/bin/ia" versoes)
+printf '%s\n' 'PASS Hermes stays optional and is installed or updated only on request'
+
 termux_diag_bin="$test_root/termux-diag-bin"
 mkdir -p "$termux_diag_bin"
 cat > "$termux_diag_bin/getprop" <<'MOCK'
@@ -426,13 +736,18 @@ printf '%s\n' \
     $'@diag\tagent\tcodex\tyes\t0.160.0' \
     $'@diag\tagent\tagy\tyes\t1.2.16' \
     $'@diag\tagent\topencode\tno\t1.18.34' \
+    $'@diag\tagent\thermes\tyes\t0.22.1' \
     $'@diag\tcheck\tnetwork\tok\t-' \
     $'@diag\tisolation\tcodex\tunavailable\t-' \
     $'@diag\tlocal\tembeddinggemma\tready\t2.0.0' \
+    $'@diag\tweb\tpainel\tactive\t127.0.0.1:7690' \
     $'@diag\tweb\tterminal\tactive\t127.0.0.1:7680' \
     $'@diag\tweb\tembedding\tstopped\t-' \
     $'@diag\tagent\tgemini\tyes\t1.0.0' \
     $'@diag\tagent\tclaude\tno\t2.1;id' \
+    $'@diag\tagent\thermes\tno\t0.22.1;id' \
+    $'@diag\tweb\tpainel\tactive\t0.0.0.0:7690' \
+    $'@diag\tweb\tpainel\tactive\t127.0.0.1:7690/token' \
     $'@diag\tcheck\tdistro\tok\tUbuntu;reboot' \
     $'@diag\tcheck\tnode\tok\t-' \
     $'@diag\tisolation\tclaude\tactive\t-' \
@@ -460,7 +775,9 @@ expect_lines "$test_root/diag.log" \
     '^  Codex +0\.160\.0 +login ok$' \
     '^  Antigravity CLI +1\.2\.16 +login ok$' \
     '^  OpenCode +1\.18\.34 +sem login$' \
+    '^  Hermes Agent +0\.22\.1 +login ok$' \
     '^  EmbeddingGemma 2 +2\.0\.0 +pronto \(modelo em cache\)$' \
+    '^  Painel web +ativo \(link com token: ia web status painel\)$' \
     '^  WebUI Terminal +ativo \(http://127\.0\.0\.1:7680\)$' \
     '^  WebUI Embedding +parado$' \
     '^  PRoot nao isola os agentes' \
@@ -468,7 +785,7 @@ expect_lines "$test_root/diag.log" \
     '^  - OpenCode: entre com ia opencode auth login; sem chave de API, use GitHub Copilot ou ChatGPT Plus/Pro\.$'
 assert_equal "$(grep -c '^  - ' "$test_root/diag.log")" 1 'suggests only the missing login'
 assert_equal "$(grep -Ec '^  (GitHub Copilot|Claude Code|Codex|Antigravity CLI|OpenCode) ' "$test_root/diag.log")" 5 'shows one row per agent'
-if grep -Eq 'gemini|unrelated|;id|reboot|extra' "$test_root/diag.log"; then
+if grep -Eq 'gemini|unrelated|;id|reboot|extra|0\.0\.0\.0|7690/' "$test_root/diag.log"; then
     fail_test 'unexpected Linux output reached the diagnostic'
 fi
 printf '%s\n' 'PASS diagnostic shows Termux, Linux, agents and protections'
@@ -483,6 +800,7 @@ printf '%s\n' \
     $'@diag\tagent\tcodex\tno\t0.160.0' \
     $'@diag\tagent\tagy\tmissing\t-' \
     $'@diag\tagent\topencode\tbroken\t-' \
+    $'@diag\tagent\thermes\tmissing\t-' \
     $'@diag\tcheck\tnetwork\tfail\t-' \
     $'@diag\tisolation\tcodex\tineffective\t-' \
     > "$TERMUX_AI_TEST_DIAG"
@@ -499,6 +817,7 @@ expect_lines "$test_root/diag-problems.log" \
     '^  Codex +0\.160\.0 +sem login$' \
     '^  Antigravity CLI +- +nao instalado$' \
     '^  OpenCode +- +nao inicia$' \
+    '^  Hermes Agent +- +opcional \(nao instalado\)$' \
     '^  Codex: o sandbox iniciou, mas nao bloqueou uma gravacao de teste\.$' \
     '^  - Pouco espaco livre' \
     '^  - Node\.js 22\+ e Git sao necessarios' \
@@ -534,6 +853,23 @@ expect_lines "$test_root/diag-ok.log" \
     '^  Pasta atual +nao verificada$' \
     '^  Codex: o sandbox bloqueou uma gravacao de teste\.$' \
     '^  Nenhuma acao necessaria\.$'
+if grep -q 'Hermes' "$test_root/diag-ok.log"; then
+    fail_test 'Hermes was listed without being reported by the Linux'
+fi
+printf '%s\n' \
+    $'@diag\tagent\thermes\tno\t0.22.1' \
+    > "$TERMUX_AI_TEST_DIAG"
+run_termux_diagnostics > "$test_root/diag-hermes-login.log"
+expect_lines "$test_root/diag-hermes-login.log" \
+    '^  Hermes Agent +0\.22\.1 +sem login$' \
+    '^  - Hermes Agent: configure um provedor com ia hermes setup ou ia hermes model\.$'
+printf '%s\n' \
+    $'@diag\tagent\thermes\tbroken\t-' \
+    > "$TERMUX_AI_TEST_DIAG"
+run_termux_diagnostics > "$test_root/diag-hermes-broken.log"
+expect_lines "$test_root/diag-hermes-broken.log" \
+    '^  Hermes Agent +- +nao inicia$' \
+    '^  - Hermes Agent: reinstale com ia atualizar hermes\.$'
 printf '%s\n' \
     $'@diag\tagent\tcodex\tmissing\t-' \
     $'@diag\tisolation\tcodex\tmissing\t-' \
@@ -567,8 +903,10 @@ test ! -e "$TERMUX_AI_TEST_ARGS"
 expect_failure 'diagnostic ran inside Linux' env TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" diagnostico
 grep -q 'fora do Linux' "$test_root/expected-failure.log"
 test ! -e "$TERMUX_AI_TEST_ARGS"
-grep -Fq '\n9. Diagnostico do ambiente\n0. Sair' "$project_root/bin/ia"
+grep -Fq '\n9. Diagnostico do ambiente\n10. Hermes Agent (opcional)\n11. Painel web (varios agentes)\n0. Sair' "$project_root/bin/ia"
 grep -Fq '9) run_maintenance show_diagnostics || true; continue ;;' "$project_root/bin/ia"
+grep -Fq '10) tool_name=hermes ;;' "$project_root/bin/ia"
+grep -Fq '11) manage_web || true; continue ;;' "$project_root/bin/ia"
 printf '%s\n' 'PASS diagnostic validates its environment and is in the menu'
 
 export HOME="$test_root/home"
@@ -643,6 +981,31 @@ expect_preflight_failure PREFIX=/not-termux
 bash "$project_root/install.sh" --check > "$test_root/preflight.log"
 test ! -e "$TERMUX_AI_TEST_INSTALL_LOG"
 test ! -e "$HOME/.local"
+grep -Fq 'Hermes Agent e opcional' "$test_root/preflight.log"
+
+download_copy="$test_root/download-copy"
+mkdir -p "$download_copy"
+cp -a "$project_root/install.sh" "$project_root/bin" "$project_root/scripts" "$download_copy/"
+bash "$download_copy/install.sh" --check > "$test_root/preflight.log"
+expect_incomplete_download() {
+    if bash "$download_copy/install.sh" --check > "$test_root/preflight.log" 2>&1; then
+        fail_test "$1"
+    fi
+    grep -Fq -- "$2" "$test_root/preflight.log" || fail_test "missing preflight message: $2"
+    test ! -e "$TERMUX_AI_TEST_INSTALL_LOG"
+    test ! -e "$HOME/.local"
+}
+for hub_file in util.mjs agents.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
+    held_file="$test_root/held-hub-file"
+    mv "$download_copy/scripts/hub/$hub_file" "$held_file"
+    expect_incomplete_download "the installer accepted a download without scripts/hub/$hub_file" 'Baixe o repositorio completo'
+    mv "$held_file" "$download_copy/scripts/hub/$hub_file"
+    cp "$download_copy/scripts/hub/$hub_file" "$held_file"
+    printf 'line\r\n' >> "$download_copy/scripts/hub/$hub_file"
+    expect_incomplete_download "the installer accepted scripts/hub/$hub_file with CRLF line endings" "scripts/hub/$hub_file precisa de finais de linha LF"
+    mv "$held_file" "$download_copy/scripts/hub/$hub_file"
+done
+bash "$download_copy/install.sh" --check > "$test_root/preflight.log"
 printf '%s\n' 'PASS read-only preflight and unsupported environments'
 
 for tool_name in copilot antigravity agy opencode; do
@@ -667,6 +1030,7 @@ printf '%s\n' 'PASS existing commands and unrelated Linux are preserved'
 mkdir -p "$PREFIX/var/lib/proot-distro/containers/ubuntu/rootfs"
 printf 'keep this project\n' > "$PREFIX/var/lib/proot-distro/containers/ubuntu/rootfs/project"
 printf 'export ORIGINAL_SETTING=kept\n' > "$HOME/.bashrc"
+printf 'foreign hermes\n' > "$PREFIX/bin/hermes"
 bash "$project_root/install.sh" --yes > "$test_root/first-install.log"
 state_dir="$HOME/.local/share/termux-ai"
 printf 'export ORIGINAL_SETTING=kept\n' > "$test_root/bashrc.expected"
@@ -679,6 +1043,11 @@ cmp "$state_dir/tools/embeddinggemma_web.py" "$project_root/scripts/embeddinggem
 cmp "$state_dir/tools/embeddinggemma_cli.py" "$project_root/scripts/embeddinggemma_cli.py"
 grep -Fqx 'Codex sem sandbox no Android: ia codex abre no modo Pedir aprovacao.' "$test_root/first-install.log"
 grep -Fq 'Use ia diagnostico para conferir logins e protecoes.' "$test_root/first-install.log"
+grep -Fq 'ia atualizar hermes' "$test_root/first-install.log"
+grep -Fq 'ia orquestrar' "$test_root/first-install.log"
+assert_equal "$(< "$PREFIX/bin/hermes")" 'foreign hermes' 'keeps a hermes command that this installer does not own'
+grep -Fq 'Ja existe um comando hermes' "$test_root/first-install.log"
+rm "$PREFIX/bin/hermes"
 grep -Fqx 'proot login termux-ai -- /bin/bash -se -- system' "$TERMUX_AI_TEST_INSTALL_LOG"
 grep -Fqx 'proot login termux-ai --user node -- /bin/bash -se -- agents' "$TERMUX_AI_TEST_INSTALL_LOG"
 grep -Fqx "proot login termux-ai --user node -- /bin/bash -se -- install-assets $project_root" "$TERMUX_AI_TEST_INSTALL_LOG"
@@ -687,7 +1056,7 @@ assert_equal "$(grep -c '^proot install ' "$TERMUX_AI_TEST_INSTALL_LOG")" 1 'doe
 assert_equal "$(grep -c 'install-assets' "$TERMUX_AI_TEST_INSTALL_LOG")" 2 'refreshes guest assets on reinstall'
 assert_equal "$(grep -c 'menu.bash' "$HOME/.bashrc")" 1 'does not duplicate the startup hook'
 assert_equal "$(< "$PREFIX/var/lib/proot-distro/containers/ubuntu/rootfs/project")" 'keep this project' 'preserves other Linux data'
-for tool_name in ia codex copilot claude antigravity agy opencode embeddinggemma embedding; do
+for tool_name in ia codex copilot claude antigravity agy opencode hermes embeddinggemma embedding; do
     test -x "$PREFIX/bin/$tool_name"
     cmp "$PREFIX/bin/$tool_name" "$state_dir/bin/ia"
 done
@@ -697,7 +1066,7 @@ printf '%s\n' 'PASS mock installation, managed rerun and preserved configuration
 expect_failure 'adoption replaced the managed Linux' bash "$project_root/install.sh" --yes --adopt-ubuntu
 grep -q 'usa o Linux termux-ai' "$test_root/expected-failure.log"
 assert_equal "$(< "$state_dir/linux.conf")" $'name=termux-ai\nuser=node' 'keeps the managed Linux selected'
-for tool_name in ia codex copilot claude antigravity agy opencode embeddinggemma embedding; do
+for tool_name in ia codex copilot claude antigravity agy opencode hermes embeddinggemma embedding; do
     cmp "$PREFIX/bin/$tool_name" "$state_dir/bin/ia"
 done
 printf '%s\n' 'PASS managed installation refuses Ubuntu adoption'
@@ -738,17 +1107,21 @@ export TERMUX_AI_TEST_DOWNLOAD_LOG="$test_root/download.log"
 export TERMUX_AI_TEST_CURL_ARGS="$test_root/curl-arguments.log"
 export TERMUX_AI_TEST_NPM_LOG="$test_root/npm.log"
 export TERMUX_AI_TEST_AGY_PAYLOAD="$test_root/antigravity.tar.gz"
+export TERMUX_AI_TEST_HERMES_LOG="$test_root/hermes.log"
+export TERMUX_AI_TEST_HERMES_STUB="$test_root/hermes-stub.sh"
+export TERMUX_AI_TEST_HERMES_INSTALLER_SCRIPT="$test_root/hermes-installer.sh"
 mkdir -p "$HOME" "$test_root/payload"
 codex_pin="$(sed -n 's/^codex_version=//p' "$setup_script")"
 copilot_pin="$(sed -n 's/^copilot_version=//p' "$setup_script")"
 claude_pin="$(sed -n 's/^claude_version=//p' "$setup_script")"
 opencode_pin="$(sed -n 's/^opencode_version=//p' "$setup_script")"
-for pinned_version in "$codex_pin" "$copilot_pin" "$claude_pin" "$opencode_pin"; do
+hermes_pin="$(sed -n 's/^hermes_version=//p' "$setup_script")"
+for pinned_version in "$codex_pin" "$copilot_pin" "$claude_pin" "$opencode_pin" "$hermes_pin"; do
     [[ $pinned_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail_test "invalid pinned version <$pinned_version>"
 done
 
 # Bloqueia agentes reais do ambiente de teste: nenhum deve ser consultado ou alterado.
-for tool_name in codex copilot claude agy opencode antigravity; do
+for tool_name in codex copilot claude agy opencode antigravity hermes; do
     printf '#!/usr/bin/env bash\nexit 127\n' > "$test_root/bin/$tool_name"
 done
 
@@ -876,6 +1249,17 @@ NODE
         cp "$TERMUX_AI_TEST_AGY_PAYLOAD" "$destination"
         ;;
     https://registry.npmjs.org/) exit "${TERMUX_AI_TEST_NETWORK_FAILURE:-0}" ;;
+    https://api.github.com/repos/NousResearch/hermes-agent/releases/latest)
+        [[ -n ${TERMUX_AI_TEST_HERMES_RELEASE:-} && $TERMUX_AI_TEST_HERMES_RELEASE != fail ]] || exit 22
+        printf '%s\n' "$TERMUX_AI_TEST_HERMES_RELEASE" > "$destination"
+        ;;
+    https://hermes-agent.nousresearch.com/install.sh)
+        case "${TERMUX_AI_TEST_HERMES_INSTALLER:-ok}" in
+            fail) exit 22 ;;
+            empty) : > "$destination" ;;
+            *) cp "$TERMUX_AI_TEST_HERMES_INSTALLER_SCRIPT" "$destination" ;;
+        esac
+        ;;
     *) printf 'Unexpected download: %s\n' "$source_url" >&2; exit 2 ;;
 esac
 MOCK
@@ -907,6 +1291,10 @@ for expected_line in "Verificado: GitHub Copilot $copilot_pin" "Verificado: Clau
     grep -Fqx "$expected_line" "$test_root/guest-setup.log" || fail_test "missing <$expected_line>"
 done
 test -x "$HOME/.local/bin/agy"
+test ! -e "$HOME/.local/bin/hermes" || fail_test 'the optional Hermes was installed with the other agents'
+if grep -qi 'hermes' "$TERMUX_AI_TEST_DOWNLOAD_LOG" "$test_root/guest-setup.log"; then
+    fail_test 'the agents stage touched the optional Hermes'
+fi
 cmp "$HOME/.bashrc" "$test_root/guest-bashrc.before"
 # shellcheck disable=SC2016
 profile_entry='export PATH="$HOME/.local/bin:$PATH"'
@@ -968,7 +1356,8 @@ expected_versions="$(printf '@version\t%s\t%s\t%s\t%s\n' \
     claude "$claude_pin" 9.0.0 outdated \
     codex "$codex_pin" "$codex_pin" current \
     agy 1.2.1 1.2.16 outdated \
-    opencode "$opencode_pin" "$opencode_pin-beta.1" current)"
+    opencode "$opencode_pin" "$opencode_pin-beta.1" current \
+    hermes - "$hermes_pin" missing)"
 TERMUX_AI_TEST_LATEST_COPILOT=fail TERMUX_AI_TEST_LATEST_CLAUDE=9.0.0 TERMUX_AI_TEST_LATEST_CODEX="$codex_pin" \
     TERMUX_AI_TEST_LATEST_OPENCODE="$opencode_pin-beta.1" TERMUX_AI_TEST_AGY_VERSION=1.2.16 \
     bash "$setup_script" versions > "$test_root/guest-versions.log"
@@ -1002,6 +1391,105 @@ expect_failure 'update accepted a different installed version' \
     env TERMUX_AI_TEST_NPM_REPORTED_VERSION=0.998.0 bash "$setup_script" update codex 0.999.1
 grep -q 'esperado 0\.999\.1' "$test_root/expected-failure.log"
 printf '%s\n' 'PASS update stage installs and verifies the confirmed version'
+
+cat > "$TERMUX_AI_TEST_HERMES_STUB" <<'MOCK'
+#!/usr/bin/env bash
+version_file="$HOME/.hermes-test-version"
+case "${1:-}" in
+    --version)
+        [[ $(< "$version_file") != broken ]] || exit 3
+        printf 'Hermes Agent v%s+1.g5575a08 (2026.9.24) \xc2\xb7 stable \xc2\xb7 local 5575a0859d62\n' "$(< "$version_file")"
+        ;;
+    update)
+        printf '%s\n' "$*" >> "$TERMUX_AI_TEST_HERMES_LOG"
+        [[ ${TERMUX_AI_TEST_HERMES_UPDATE_FAILURE:-0} == 0 ]] || exit 4
+        printf '%s\n' "${TERMUX_AI_TEST_HERMES_UPDATE_VERSION:-0.22.1}" > "$version_file"
+        ;;
+    *) exit 2 ;;
+esac
+MOCK
+cat > "$TERMUX_AI_TEST_HERMES_INSTALLER_SCRIPT" <<'MOCK'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'installer %s|%s|%s\n' "$*" "${TERMUX_VERSION-unset}" "${PREFIX-unset}" >> "$TERMUX_AI_TEST_HERMES_LOG"
+[[ ${TERMUX_AI_TEST_HERMES_INSTALL_FAILURE:-0} == 0 ]] || exit 3
+[[ ${TERMUX_AI_TEST_HERMES_INSTALL_NOOP:-0} == 0 ]] || exit 0
+mkdir -p "$HOME/.local/bin"
+install -m 755 "$TERMUX_AI_TEST_HERMES_STUB" "$HOME/.local/bin/hermes"
+printf '%s\n' "${TERMUX_AI_TEST_HERMES_INSTALL_VERSION:-0.22.1}" > "$HOME/.hermes-test-version"
+MOCK
+chmod 755 "$TERMUX_AI_TEST_HERMES_STUB"
+
+hermes_version_line() {
+    bash "$setup_script" versions | awk -F'\t' '$2 == "hermes"'
+}
+hermes_release() {
+    printf '{"tag_name":"%s","draft":%s,"prerelease":%s}' "$1" "${2:-false}" "${3:-false}"
+}
+assert_equal "$(TERMUX_AI_TEST_HERMES_RELEASE="$(hermes_release v0.23.4)" hermes_version_line)" \
+    $'@version\thermes\t-\t0.23.4\tmissing' 'offers the latest stable Hermes release when it is missing'
+for ignored_release in "$(hermes_release v2026.9.24)" "$(hermes_release v0.23.5 false true)" "$(hermes_release v0.23.5 true false)" \
+    "$(hermes_release v1000.0.1)" 'not json' fail ''; do
+    assert_equal "$(TERMUX_AI_TEST_HERMES_RELEASE="$ignored_release" hermes_version_line)" \
+        $'@version\thermes\t-\t'"$hermes_pin"$'\tmissing' "falls back to the validated Hermes version for: $ignored_release"
+done
+install -m 755 "$TERMUX_AI_TEST_HERMES_STUB" "$HOME/.local/bin/hermes"
+printf '0.22.0\n' > "$HOME/.hermes-test-version"
+assert_equal "$(TERMUX_AI_TEST_HERMES_RELEASE="$(hermes_release v0.22.1)" hermes_version_line)" \
+    $'@version\thermes\t0.22.0\t0.22.1\toutdated' 'reports an outdated Hermes without the build metadata'
+assert_equal "$(TERMUX_AI_TEST_HERMES_RELEASE="$(hermes_release v0.22.0)" hermes_version_line)" \
+    $'@version\thermes\t0.22.0\t0.22.0\tcurrent' 'reports a current Hermes'
+assert_equal "$(TERMUX_AI_TEST_HERMES_RELEASE="$(hermes_release v0.21.9)" hermes_version_line)" \
+    $'@version\thermes\t0.22.0\t0.21.9\tcurrent' 'keeps a Hermes that is newer than the latest release'
+assert_equal "$(TERMUX_AI_TEST_HERMES_RELEASE=fail hermes_version_line)" \
+    $'@version\thermes\t0.22.0\t-\tunknown' 'reports an unknown Hermes status without the release lookup'
+
+update_hermes() {
+    if ! "$@" > "$test_root/guest-update-hermes.log" 2> "$test_root/guest-update-hermes.err"; then
+        cat "$test_root/guest-update-hermes.log" "$test_root/guest-update-hermes.err" >&2
+        fail_test "Hermes update failed: $*"
+    fi
+}
+
+rm "$HOME/.local/bin/hermes" "$HOME/.hermes-test-version"
+: > "$TERMUX_AI_TEST_HERMES_LOG"
+: > "$TERMUX_AI_TEST_DOWNLOAD_LOG"
+update_hermes env TERMUX_VERSION=0.118.3 bash "$setup_script" update hermes 0.22.1
+grep -Fqx 'Atualizado: Hermes Agent 0.22.1' "$test_root/guest-update-hermes.log"
+assert_equal "$(< "$TERMUX_AI_TEST_HERMES_LOG")" 'installer --non-interactive --skip-browser --skip-computer-use|unset|unset' \
+    'runs the official Hermes installer outside the Termux environment'
+assert_equal "$(< "$TERMUX_AI_TEST_DOWNLOAD_LOG")" 'https://hermes-agent.nousresearch.com/install.sh' 'downloads only the official Hermes installer'
+printf '0.22.0\n' > "$HOME/.hermes-test-version"
+: > "$TERMUX_AI_TEST_HERMES_LOG"
+: > "$TERMUX_AI_TEST_DOWNLOAD_LOG"
+update_hermes bash "$setup_script" update hermes 0.22.1
+grep -Fqx 'Atualizado: Hermes Agent 0.22.1' "$test_root/guest-update-hermes.log"
+assert_equal "$(< "$TERMUX_AI_TEST_HERMES_LOG")" 'update --yes --no-gateway-restart' 'updates an installed Hermes with its own command'
+test ! -s "$TERMUX_AI_TEST_DOWNLOAD_LOG"
+printf '0.21.0\n' > "$HOME/.hermes-test-version"
+update_hermes env TERMUX_AI_TEST_HERMES_UPDATE_VERSION=0.21.5 bash "$setup_script" update hermes 0.22.1
+grep -Fqx 'Atualizado: Hermes Agent 0.21.5' "$test_root/guest-update-hermes.log"
+grep -Fq 'Aviso: o Hermes Agent informou 0.21.5; a ultima release consultada e 0.22.1.' "$test_root/guest-update-hermes.err"
+printf 'broken\n' > "$HOME/.hermes-test-version"
+: > "$TERMUX_AI_TEST_HERMES_LOG"
+update_hermes bash "$setup_script" update hermes 0.22.1
+grep -Fqx 'Atualizado: Hermes Agent 0.22.1' "$test_root/guest-update-hermes.log"
+assert_equal "$(< "$TERMUX_AI_TEST_HERMES_LOG")" 'installer --non-interactive --skip-browser --skip-computer-use|unset|unset' \
+    'repairs a Hermes that does not start with the official installer'
+expect_failure 'a failed Hermes update was reported as done' env TERMUX_AI_TEST_HERMES_UPDATE_FAILURE=1 bash "$setup_script" update hermes 0.22.1
+if grep -q 'Atualizado' "$test_root/expected-failure.log"; then
+    fail_test 'a failed Hermes update printed a success line'
+fi
+rm "$HOME/.local/bin/hermes" "$HOME/.hermes-test-version"
+for failure_flag in TERMUX_AI_TEST_HERMES_INSTALLER=fail TERMUX_AI_TEST_HERMES_INSTALLER=empty \
+    TERMUX_AI_TEST_HERMES_INSTALL_FAILURE=1 TERMUX_AI_TEST_HERMES_INSTALL_NOOP=1; do
+    expect_failure "Hermes installation failure ignored: $failure_flag" env "$failure_flag" bash "$setup_script" update hermes 0.22.1
+    test ! -e "$HOME/.local/bin/hermes"
+done
+grep -Fq 'nao respondeu ao teste de versao' "$test_root/expected-failure.log"
+expect_failure 'an empty Hermes installer was run' env TERMUX_AI_TEST_HERMES_INSTALLER=empty bash "$setup_script" update hermes 0.22.1
+grep -Fq 'veio vazio' "$test_root/expected-failure.log"
+printf '%s\n' 'PASS Hermes is optional, installed or updated only on request and verified afterwards'
 
 : > "$TERMUX_AI_TEST_DOWNLOAD_LOG"
 expect_failure 'Antigravity installed a version other than the confirmed one' \
@@ -1077,7 +1565,7 @@ sandbox_probe="$HOME/.termux-ai-sandbox-probe"
 mkdir -p "$HOME/.local/bin" "$HOME/.copilot" "$HOME/.gemini/antigravity-cli" "$diag_tools" "$diag_system" "$diag_work"
 # Espelha /usr/bin e /bin sem os agentes reais de quem roda os testes no Linux do PRoot.
 ln -s /usr/bin/* /bin/* "$diag_system/" 2> /dev/null || true
-rm -f "$diag_system/"{codex,copilot,claude,agy,antigravity,opencode}
+rm -f "$diag_system/"{codex,copilot,claude,agy,antigravity,opencode,hermes}
 test -x "$diag_system/bash" || fail_test 'could not mirror the system commands'
 cp "$test_root/bin/curl" "$diag_tools/curl"
 cat > "$diag_tools/node" <<'MOCK'
@@ -1130,6 +1618,14 @@ case "$tool:${1:-}" in
             *) printf 'Unexpected output\n' ;;
         esac
         ;;
+    hermes:auth)
+        [[ ${2:-} == list ]] || exit 2
+        case "$state" in
+            yes) printf 'openrouter (1 credentials):\n  #1  api_key  manual\n' ;;
+            no) ;;
+            *) printf 'Traceback (most recent call last)\n' >&2; exit 1 ;;
+        esac
+        ;;
     opencode:auth)
         if [[ $state == unknown ]]; then
             printf 'Unexpected output\n'
@@ -1165,7 +1661,7 @@ write_copilot_config() {
 
 # Os tokens reais do ambiente nunca entram no teste.
 run_guest_diagnostics() {
-    env -u COPILOT_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN -u COPILOT_PROVIDER_BASE_URL -u COPILOT_HOME \
+    env -u COPILOT_GITHUB_TOKEN -u GH_TOKEN -u GITHUB_TOKEN -u COPILOT_PROVIDER_BASE_URL -u COPILOT_HOME -u HERMES_HOME \
         PATH="$diag_tools:$diag_system" "$@"
 }
 
@@ -1189,9 +1685,11 @@ expected_diag="$(printf '@diag\t%s\t%s\t%s\t%s\n' \
     agent codex yes 1.2.3 \
     agent agy yes 1.2.3 \
     agent opencode yes 1.2.3 \
+    agent hermes missing - \
     check network ok - \
     isolation codex unavailable - \
     local embeddinggemma missing - \
+    web painel stopped - \
     web terminal stopped - \
     web embedding stopped -)"
 assert_equal "$(sed 1d "$test_root/guest-diag.log")" "$expected_diag" 'reports every check and agent in order'
@@ -1237,6 +1735,60 @@ run_guest_diagnostics bash "$setup_script" diagnose "$diag_work" > "$test_root/g
 expect_diag_lines "$test_root/guest-diag-copilot.log" $'@diag\tagent\tcopilot\tno\t1.2.3'
 mv "$test_root/agy.diag" "$HOME/.local/bin/agy"
 printf '%s\n' 'PASS guest diagnostic separates missing, unknown and broken agents'
+
+install -m 755 "$HOME/.local/bin/codex" "$HOME/.local/bin/hermes"
+mkdir -p "$HOME/.hermes"
+hermes_diag_line() {
+    run_guest_diagnostics "$@" bash "$setup_script" diagnose "$diag_work" | grep -F $'@diag\tagent\thermes\t'
+}
+write_hermes_env() {
+    printf '%s\n' "$@" > "$HOME/.hermes/.env"
+}
+for hermes_state in yes no unknown; do
+    assert_equal "$(hermes_diag_line TERMUX_AI_TEST_DIAG_HERMES="$hermes_state")" $'@diag\tagent\thermes\t'"$hermes_state"$'\t1.2.3' \
+        "reports the Hermes login state: $hermes_state"
+done
+assert_equal "$(hermes_diag_line TERMUX_AI_TEST_DIAG_HERMES=broken)" $'@diag\tagent\thermes\tbroken\t-' 'reports a Hermes that does not start'
+write_hermes_env 'HERMES_MODEL=some-model' '# OPENROUTER_API_KEY=commented' 'OPENROUTER_API_KEY=' 'GH_TOKEN=""' "SOME_KEY=''" \
+    'TOKEN_NOTE=spaced' 'ANOTHER_KEY=   ' 'KEY_WITH_COMMENT= # not a value'
+assert_equal "$(hermes_diag_line TERMUX_AI_TEST_DIAG_HERMES=no)" $'@diag\tagent\thermes\tno\t1.2.3' 'ignores comments, empty values and unrelated settings in the Hermes configuration'
+for hermes_env_line in 'export ANTHROPIC_API_KEY="sk-secret-value"' '  OPENROUTER_API_KEY=sk-secret-value' "TELEGRAM_BOT_TOKEN='123:secret-value'" \
+    'DEEPSEEK_API_KEY = sk-secret-value'; do
+    write_hermes_env 'HERMES_MODEL=some-model' "$hermes_env_line"
+    for hermes_state in no unknown; do
+        assert_equal "$(hermes_diag_line TERMUX_AI_TEST_DIAG_HERMES="$hermes_state")" $'@diag\tagent\thermes\tyes\t1.2.3' \
+            "recognizes a Hermes credential in its configuration: $hermes_env_line"
+    done
+done
+run_guest_diagnostics bash "$setup_script" diagnose "$diag_work" > "$test_root/guest-diag-hermes.log"
+if grep -q 'secret-value' "$test_root/guest-diag-hermes.log"; then
+    fail_test 'diagnostic exposed a Hermes credential'
+fi
+rm "$HOME/.hermes/.env"
+mkdir -p "$test_root/hermes-home"
+printf 'OPENROUTER_API_KEY=sk-other-home\n' > "$test_root/hermes-home/.env"
+assert_equal "$(hermes_diag_line TERMUX_AI_TEST_DIAG_HERMES=no HERMES_HOME="$test_root/hermes-home")" $'@diag\tagent\thermes\tyes\t1.2.3' \
+    'reads the Hermes configuration from HERMES_HOME'
+assert_equal "$(hermes_diag_line TERMUX_AI_TEST_DIAG_HERMES=no)" $'@diag\tagent\thermes\tno\t1.2.3' 'does not mix the default Hermes configuration with HERMES_HOME'
+rm "$HOME/.local/bin/hermes"
+rmdir "$HOME/.hermes"
+printf '%s\n' 'PASS guest diagnostic reads Hermes logins without exposing credentials'
+
+mkdir -p "$HOME/.local/share/termux-ai/web"
+bash -c 'exec -a termux-ai/hub/server.mjs sleep 60' &
+fake_panel=$!
+printf '%s\n' "$fake_panel" > "$HOME/.local/share/termux-ai/web/painel.pid"
+run_guest_diagnostics bash "$setup_script" diagnose "$diag_work" > "$test_root/guest-diag-web.log"
+expect_diag_lines "$test_root/guest-diag-web.log" $'@diag\tweb\tpainel\tactive\t127.0.0.1:7690'
+kill "$fake_panel"
+wait "$fake_panel" 2> /dev/null || true
+for stale_pid in "$fake_panel" "$$" not-a-pid; do
+    printf '%s\n' "$stale_pid" > "$HOME/.local/share/termux-ai/web/painel.pid"
+    run_guest_diagnostics bash "$setup_script" diagnose "$diag_work" > "$test_root/guest-diag-web.log"
+    expect_diag_lines "$test_root/guest-diag-web.log" $'@diag\tweb\tpainel\tstopped\t-'
+done
+rm "$HOME/.local/share/termux-ai/web/painel.pid"
+printf '%s\n' 'PASS guest diagnostic reports the panel only while its process is alive'
 
 for sandbox_mode in ineffective active; do
     : > "$TERMUX_AI_TEST_SANDBOX_LOG"
@@ -1456,7 +2008,7 @@ cmp "$state_dir/webui.sh" "$project_root/scripts/webui.sh"
 cmp "$state_dir/web/menu.sh" "$project_root/scripts/web-menu.sh"
 cmp "$state_dir/tools/embeddinggemma_web.py" "$project_root/scripts/embeddinggemma_web.py"
 cmp "$state_dir/tools/embeddinggemma_cli.py" "$project_root/scripts/embeddinggemma_cli.py"
-for tool_name in ia codex copilot claude antigravity agy opencode embeddinggemma embedding; do
+for tool_name in ia codex copilot claude antigravity agy opencode hermes embeddinggemma embedding; do
     [[ -f "$PREFIX/bin/$tool_name" && ! -L "$PREFIX/bin/$tool_name" ]] || fail_test "$tool_name is not a managed command"
     cmp "$PREFIX/bin/$tool_name" "$state_dir/bin/ia"
 done
@@ -1485,7 +2037,7 @@ cmp "$HOME/.bashrc" "$test_root/adopt-bashrc.installed"
 assert_equal "$(< "$state_dir/linux.conf")" $'name=ubuntu\nuser=root' 'keeps the adopted Ubuntu selected'
 cmp "$state_dir/adopted/bin/ia" "$test_root/ubuntu-launcher.before"
 cmp "$state_dir/adopted/bin/opencode" "$test_root/ubuntu-launcher.before"
-for tool_name in ia codex copilot claude antigravity agy opencode embeddinggemma embedding; do
+for tool_name in ia codex copilot claude antigravity agy opencode hermes embeddinggemma embedding; do
     cmp "$PREFIX/bin/$tool_name" "$state_dir/bin/ia"
 done
 expect_failure 'OpenCode menu patch changed an adopted installation' bash "$project_root/scripts/add-opencode-ubuntu.sh" --yes
@@ -1528,6 +2080,7 @@ rm "$PREFIX/bin/agy"
 bash "$undo_script" > "$test_root/undo.log"
 grep -q 'Adocao desfeita' "$test_root/undo.log"
 test ! -e "$state_dir"
+test ! -e "$PREFIX/bin/hermes"
 assert_manual_setup "$PREFIX" codex copilot antigravity agy
 cmp "$PREFIX/bin/claude" "$test_root/adopt-claude.custom"
 cmp "$HOME/.bashrc" "$test_root/adopt-bashrc.before"
@@ -1545,10 +2098,16 @@ test -f "$test_root/home/.local/share/termux-ai/container.managed"
 cmp "$test_root/prefix/bin/ia" "$test_root/home/.local/share/termux-ai/bin/ia"
 printf '%s\n' 'PASS adoption undo from the README restores the manual setup and repeats safely'
 
-for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma-launcher.sh scripts/add-opencode-ubuntu.sh tests/run.sh; do
+for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma-launcher.sh scripts/add-opencode-ubuntu.sh scripts/hub/attach.sh tests/run.sh; do
     if [[ $relative_path != *.py ]]; then
         bash -n "$project_root/$relative_path"
     fi
+    if LC_ALL=C grep -q $'\r' "$project_root/$relative_path"; then
+        printf 'FAIL: CRLF in %s\n' "$relative_path" >&2
+        exit 1
+    fi
+done
+for relative_path in scripts/hub/util.mjs scripts/hub/agents.mjs scripts/hub/orchestrator.mjs scripts/hub/sessions.mjs scripts/hub/server.mjs scripts/hub/cli.mjs scripts/hub/index.html scripts/hub/tmux.conf; do
     if LC_ALL=C grep -q $'\r' "$project_root/$relative_path"; then
         printf 'FAIL: CRLF in %s\n' "$relative_path" >&2
         exit 1
@@ -1564,6 +2123,8 @@ grep -Fq 'codex -s workspace-write -a on-request' "$project_root/scripts/web-men
 grep -Fq '7. EmbeddingGemma 2 (local, opcional)' "$project_root/scripts/web-menu.sh"
 grep -Fq '8. Versoes e atualizacoes dos agentes' "$project_root/scripts/web-menu.sh"
 grep -Fq '9. Diagnostico do ambiente' "$project_root/scripts/web-menu.sh"
+grep -Fq '10. Hermes Agent (opcional)' "$project_root/scripts/web-menu.sh"
+grep -Fq 'web_hermes' "$project_root/scripts/web-menu.sh"
 
 TERMUX_AI_CACHE_DIR="$test_root/emb-cache" python3 - "$project_root/scripts" "$test_root" <<'PYTEST'
 import pathlib

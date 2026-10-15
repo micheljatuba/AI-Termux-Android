@@ -6,9 +6,14 @@ codex_version=0.159.3
 copilot_version=1.0.90
 claude_version=2.1.286
 opencode_version=1.18.34
+hermes_version=0.22.1
 agent_tools=(copilot claude codex agy opencode)
+# O Hermes Agent e opcional: so e instalado quando pedido (ia atualizar hermes).
+optional_tools=(hermes)
 version_pattern='([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?'
 antigravity_manifest_base='https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests'
+hermes_installer_url='https://hermes-agent.nousresearch.com/install.sh'
+hermes_release_url='https://api.github.com/repos/NousResearch/hermes-agent/releases/latest'
 
 fail() {
     printf 'Erro: %s\n' "$*" >&2
@@ -22,6 +27,7 @@ display_name() {
         codex) printf '%s\n' 'Codex' ;;
         agy) printf '%s\n' 'Antigravity CLI' ;;
         opencode) printf '%s\n' 'OpenCode' ;;
+        hermes) printf '%s\n' 'Hermes Agent' ;;
     esac
 }
 
@@ -41,6 +47,7 @@ pinned_version() {
         claude) printf '%s\n' "$claude_version" ;;
         codex) printf '%s\n' "$codex_version" ;;
         opencode) printf '%s\n' "$opencode_version" ;;
+        hermes) printf '%s\n' "$hermes_version" ;;
         *) printf '\n' ;;
     esac
 }
@@ -209,12 +216,45 @@ install_antigravity() {
     install -m 755 "$release_dir/antigravity" "$HOME/.local/bin/agy"
 }
 
+# Imprime a versao da ultima release estavel do Hermes (so o esquema 0.x.y; calendario e prerelease sao ignorados).
+hermes_latest() {
+    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
+        --connect-timeout 15 --max-time 30 --header 'Accept: application/vnd.github+json' \
+        --output "$work_dir/hermes-release.json" "$hermes_release_url" || return 1
+    node - "$work_dir/hermes-release.json" <<'NODE' || return 1
+const { readFileSync } = require('node:fs');
+const release = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+const match = /^v?([0-9]+\.[0-9]+\.[0-9]+)$/.exec(String(release.tag_name ?? ''));
+if (!match || release.draft || release.prerelease || Number(match[1].split('.')[0]) >= 1000) process.exit(1);
+console.log(match[1]);
+NODE
+}
+
+# O instalador oficial recusa o ambiente do Termux; o Linux convidado e um Linux comum.
+# Um Hermes que nao responde a --version e tratado como ausente: o instalador oficial o refaz.
+install_hermes() {
+    local tool_path installer="$work_dir/hermes-install.sh"
+    if installed_version hermes > /dev/null 2>&1 && tool_path="$(command -v hermes)"; then
+        printf 'Atualizando o Hermes Agent pelo proprio comando de atualizacao.\n'
+        timeout 1500s "$tool_path" update --yes --no-gateway-restart < /dev/null
+        return
+    fi
+    printf 'Instalando o Hermes Agent pelo instalador oficial (cerca de 2 GB; pode levar varios minutos).\n'
+    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
+        --connect-timeout 15 --max-time 300 --retry 2 --retry-max-time 600 \
+        --output "$installer" "$hermes_installer_url"
+    [[ -s $installer ]] || fail 'O instalador do Hermes veio vazio; nada foi instalado.'
+    timeout 1800s env -u TERMUX_VERSION -u PREFIX \
+        bash "$installer" --non-interactive --skip-browser --skip-computer-use < /dev/null
+}
+
 install_agent() {
     case "$1" in
         codex|copilot) install_npm_agent "$1" "$2" ;;
         claude) install_claude "$2" ;;
         opencode) install_opencode "$2" ;;
         agy) install_antigravity "$2" ;;
+        hermes) install_hermes ;;
     esac
 }
 
@@ -266,15 +306,25 @@ print_versions() {
         latest="$(antigravity_release "$work_dir/agy-manifest" 2> /dev/null)" \
             && sed -n '3p' <<< "$latest" > "$work_dir/agy.latest"
     ) &
+    (
+        latest="$(hermes_latest 2> /dev/null)" && printf '%s\n' "$latest" > "$work_dir/hermes.latest"
+    ) &
+    (
+        installed_version hermes > "$work_dir/hermes.installed" 2> /dev/null || true
+    ) &
     for tool in "${agent_tools[@]}"; do
         installed_version "$tool" > "$work_dir/$tool.installed" 2> /dev/null || true
     done
     wait
-    for tool in "${agent_tools[@]}"; do
+    for tool in "${agent_tools[@]}" "${optional_tools[@]}"; do
         installed=''
         latest=''
         [[ ! -s "$work_dir/$tool.installed" ]] || installed="$(< "$work_dir/$tool.installed")"
         [[ ! -s "$work_dir/$tool.latest" ]] || latest="$(< "$work_dir/$tool.latest")"
+        # Sem consulta, a versao validada serve de alvo para instalar o Hermes ausente.
+        if [[ -z $installed && -z $latest && $tool == hermes ]]; then
+            latest="$hermes_version"
+        fi
         if [[ -z $installed ]]; then
             status=missing
         elif [[ -z $latest ]]; then
@@ -379,6 +429,21 @@ agy_login() {
     fi
 }
 
+# Chaves em ~/.hermes/.env ou credenciais listadas por "hermes auth list"; so a presenca e lida, nunca os valores.
+hermes_login() {
+    local output env_file="${HERMES_HOME:-$HOME/.hermes}/.env"
+    local pattern="^[[:space:]]*(export[[:space:]]+)?[A-Z][A-Z0-9_]*(_KEY|_TOKEN)[[:space:]]*=[[:space:]]*(\"[^\"]+\"|'[^']+'|[^[:space:]#\"'])"
+    if [[ -f $env_file ]] && grep -Eq -- "$pattern" "$env_file" 2> /dev/null; then
+        printf 'yes'
+    elif ! output="$(in_agent_env "$1" auth list 2> /dev/null)"; then
+        printf 'unknown'
+    elif [[ -n ${output//[[:space:]]/} ]]; then
+        printf 'yes'
+    else
+        printf 'no'
+    fi
+}
+
 diagnose_agent() {
     local tool_path version state
     if ! tool_path="$(command -v "$1" 2> /dev/null)" || [[ $tool_path != /* ]]; then
@@ -395,6 +460,7 @@ diagnose_agent() {
         copilot) state="$(copilot_login)" ;;
         opencode) state="$(opencode_login "$tool_path")" ;;
         agy) state="$(agy_login)" ;;
+        hermes) state="$(hermes_login "$tool_path")" ;;
     esac
     printf '@diag\tagent\t%s\t%s\t%s\n' "$1" "$state" "$version"
 }
@@ -489,6 +555,11 @@ diagnose_local() {
     else
         printf '@diag\tlocal\tembeddinggemma\tbroken\t-\n'
     fi
+    if web_service_active painel 'termux-ai/hub/server.mjs'; then
+        printf '@diag\tweb\tpainel\tactive\t127.0.0.1:7690\n'
+    else
+        printf '@diag\tweb\tpainel\tstopped\t-\n'
+    fi
     if web_service_active terminal 'ttyd -i lo -p 7680'; then
         printf '@diag\tweb\tterminal\tactive\t127.0.0.1:7680\n'
     else
@@ -504,7 +575,7 @@ diagnose_local() {
 # Saida para o Termux: @diag, tipo, nome, situacao e detalhe.
 print_diagnostics() {
     local tool
-    for tool in "${agent_tools[@]}"; do
+    for tool in "${agent_tools[@]}" "${optional_tools[@]}"; do
         (
             diagnose_agent "$tool" > "$work_dir/$tool.diag"
             if [[ $tool == codex ]]; then
@@ -516,7 +587,7 @@ print_diagnostics() {
     diagnose_local > "$work_dir/local.diag" &
     diagnose_system "$1"
     wait
-    for tool in "${agent_tools[@]}"; do
+    for tool in "${agent_tools[@]}" "${optional_tools[@]}"; do
         cat -- "$work_dir/$tool.diag"
     done
     cat -- "$work_dir/network.diag"
@@ -530,7 +601,7 @@ case "$stage" in
         [[ $(id -u) == 0 ]] || fail 'Esta etapa exige o root simulado do PRoot.'
         export DEBIAN_FRONTEND=noninteractive
         apt-get update
-        apt-get install -y --no-install-recommends ca-certificates curl git gh ripgrep nano ttyd
+        apt-get install -y --no-install-recommends ca-certificates curl git gh ripgrep nano ttyd tmux libatomic1
         exit 0
         ;;
     embeddinggemma-system)
@@ -586,10 +657,13 @@ case "$stage" in
         [[ $# -eq 2 ]] || fail 'Uso interno: install-assets <repositorio>.'
         source_dir="$2"
         [[ -d "$source_dir/scripts" ]] || fail "Repositorio nao encontrado: $source_dir"
-        mkdir -p "$HOME/.local/share/termux-ai/tools" "$HOME/.local/share/termux-ai/web" "$HOME/.local/bin"
+        mkdir -p "$HOME/.local/share/termux-ai/tools" "$HOME/.local/share/termux-ai/web" "$HOME/.local/share/termux-ai/hub" "$HOME/.local/bin"
         install -m 644 "$source_dir/scripts/setup-linux.sh" "$HOME/.local/share/termux-ai/setup-linux.sh"
         install -m 644 "$source_dir/scripts/webui.sh" "$HOME/.local/share/termux-ai/webui.sh"
         install -m 644 "$source_dir/scripts/web-menu.sh" "$HOME/.local/share/termux-ai/web/menu.sh"
+        for hub_file in util.mjs agents.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
+            install -m 644 "$source_dir/scripts/hub/$hub_file" "$HOME/.local/share/termux-ai/hub/$hub_file"
+        done
         install -m 644 "$source_dir/scripts/embeddinggemma_web.py" "$HOME/.local/share/termux-ai/tools/embeddinggemma_web.py"
         install -m 644 "$source_dir/scripts/embeddinggemma_cli.py" "$HOME/.local/share/termux-ai/tools/embeddinggemma_cli.py"
         if [[ ! -e "$HOME/.local/bin/embeddinggemma" && ! -L "$HOME/.local/bin/embeddinggemma" ]]; then
@@ -611,7 +685,7 @@ case "$stage" in
         tool_name="$2"
         target_version="$3"
         case "$tool_name" in
-            copilot|claude|codex|agy|opencode) ;;
+            copilot|claude|codex|agy|opencode|hermes) ;;
             *) fail "Agente desconhecido: $tool_name" ;;
         esac
         [[ $target_version =~ ^${version_pattern}$ ]] || fail "Versao invalida: $target_version"
@@ -619,8 +693,14 @@ case "$stage" in
         install_agent "$tool_name" "$target_version"
         actual_version="$(installed_version "$tool_name")" \
             || fail "$(display_name "$tool_name") nao respondeu ao teste de versao apos a atualizacao."
-        [[ $actual_version == "$target_version" ]] \
-            || fail "$(display_name "$tool_name") informou $actual_version; esperado $target_version."
+        if [[ $tool_name == hermes ]]; then
+            # O Hermes segue o proprio canal de atualizacao e pode ficar acima ou abaixo da versao consultada.
+            version_at_least "$actual_version" "$target_version" \
+                || printf 'Aviso: o Hermes Agent informou %s; a ultima release consultada e %s.\n' "$actual_version" "$target_version" >&2
+        else
+            [[ $actual_version == "$target_version" ]] \
+                || fail "$(display_name "$tool_name") informou $actual_version; esperado $target_version."
+        fi
         printf 'Atualizado: %s %s\n' "$(display_name "$tool_name")" "$actual_version"
         ;;
 esac

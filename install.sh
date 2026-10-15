@@ -89,6 +89,7 @@ container_dir="$distro_dir/containers/termux-ai"
 legacy_dir="$distro_dir/installed-rootfs/termux-ai"
 owner_id='termux-ai-installer-v1'
 tool_names=(ia codex copilot claude antigravity agy opencode embeddinggemma embedding)
+hub_files=(util.mjs agents.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf)
 linux_name=termux-ai
 linux_user=node
 if [[ -e "$state_dir" || -L "$state_dir" ]]; then
@@ -152,6 +153,15 @@ for tool_name in "${tool_names[@]}"; do
     fail "O comando $tool_name ja existe ou foi personalizado. Nao sera substituido."
 done
 
+# O Hermes Agent e opcional: um comando hermes que nao e deste instalador e mantido, sem interromper a instalacao.
+hermes_shortcut=1
+hermes_target="$PREFIX/bin/hermes"
+if [[ -e "$hermes_target" || -L "$hermes_target" ]]; then
+    if [[ -L "$hermes_target" || ! -f "$state_dir/bin/ia" ]] || ! cmp -s "$hermes_target" "$state_dir/bin/ia"; then
+        hermes_shortcut=0
+    fi
+fi
+
 manual_menu_block=0
 if (( adopted )) && [[ -f "$HOME/.bashrc" && ! -L "$HOME/.bashrc" ]] && strip_manual_menu "$HOME/.bashrc" > /dev/null; then
     manual_menu_block=1
@@ -163,7 +173,11 @@ if (( enable_menu )) && [[ -e "$HOME/.bashrc" || -L "$HOME/.bashrc" ]]; then
         fail 'A configuracao Bash ja abre o menu ia; remova essa chamada ou use --no-menu.'
     fi
 fi
-for relative_path in bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma-launcher.sh; do
+required_files=(bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma-launcher.sh)
+for hub_file in "${hub_files[@]}"; do
+    required_files+=("scripts/hub/$hub_file")
+done
+for relative_path in "${required_files[@]}"; do
     [[ -f "$project_root/$relative_path" ]] || fail 'Baixe o repositorio completo antes de executar install.sh.'
     if LC_ALL=C grep -q $'\r' "$project_root/$relative_path"; then
         fail "O arquivo $relative_path precisa de finais de linha LF."
@@ -183,7 +197,11 @@ printf '%s\n' \
     'Os agentes exigem contas proprias e internet. PRoot nao e isolamento de seguranca.' \
     'Codex permanece experimental: o sandbox falhou no teste inicial em Android/PRoot.' \
     'Antigravity CLI: uso confirmado pelo usuario no Android; outras configuracoes precisam de validacao.' \
-    'OpenCode permanece experimental: login e execucao ainda nao testados em Android/PRoot.'
+    'OpenCode permanece experimental: login e execucao ainda nao testados em Android/PRoot.' \
+    'Hermes Agent e opcional e fica fora desta instalacao (cerca de 2 GB): use depois ia atualizar hermes.'
+if (( ! hermes_shortcut )); then
+    printf '%s\n' 'Ja existe um comando hermes que nao pertence a este instalador; ele foi mantido. Use ia hermes para abrir o Hermes Agent do Linux.'
+fi
 if (( check_only )); then
     printf '%s\n' 'Pre-verificacao concluida. Nada foi instalado; a execucao real dos agentes ainda precisa ser testada.'
     exit 0
@@ -251,7 +269,11 @@ install -m 644 "$project_root/scripts/setup-linux.sh" "$state_dir/setup-linux.sh
 } > "$state_dir/bin/ia.next"
 chmod 755 "$state_dir/bin/ia.next"
 mv -- "$state_dir/bin/ia.next" "$state_dir/bin/ia"
-for tool_name in "${tool_names[@]}"; do
+installed_tools=("${tool_names[@]}")
+if (( hermes_shortcut )); then
+    installed_tools+=(hermes)
+fi
+for tool_name in "${installed_tools[@]}"; do
     install -m 755 "$state_dir/bin/ia" "$state_dir/bin/$tool_name.next"
     mv -f -- "$state_dir/bin/$tool_name.next" "$PREFIX/bin/$tool_name"
 done
@@ -293,4 +315,6 @@ else
 fi
 printf '%s\n' \
     'Codex sem sandbox no Android: ia codex abre no modo Pedir aprovacao.' \
-    'Use ia diagnostico para conferir logins e protecoes. Nenhuma conexao SSH/ADB foi criada.'
+    'Use ia diagnostico para conferir logins e protecoes. Nenhuma conexao SSH/ADB foi criada.' \
+    'Painel web com varios agentes e orquestracao: ia web (acesso somente neste aparelho). No terminal: ia orquestrar.' \
+    'Hermes Agent e opcional (cerca de 2 GB e varios minutos): ia atualizar hermes.'
