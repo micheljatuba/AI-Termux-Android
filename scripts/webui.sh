@@ -222,6 +222,11 @@ print_status() {
 }
 
 action="${1:-}"
+# O proot-distro so volta quando o ultimo processo do Linux termina, e os servicos ficam ativos de proposito.
+# Com --marcador a ultima linha da saida e "__WEBUI_FIM__ <status>", e o launcher le o fim do script por ela.
+if [[ ${3:-} == --marcador ]]; then
+    trap 'printf "__WEBUI_FIM__ %s\n" "$?"' EXIT
+fi
 case "$action" in
     start) target="${2:-padrao}" ;;
     stop|status) target="${2:-todos}" ;;

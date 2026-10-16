@@ -156,6 +156,11 @@ opcional estiver instalado, sua interface sobe junto em `http://127.0.0.1:8085`.
 `todos`; por exemplo, `ia web stop painel`. O terminal com menu so sobe quando
 pedido, porque nao tem token.
 
+O comando volta assim que o painel esta no ar, e os servicos seguem em segundo
+plano ate `ia web stop`. Se o inicio passar de 180 s, o `ia web` para de esperar
+e avisa; ajuste o limite com `TERMUX_AI_WEB_START_TIMEOUT` (em segundos) e confira
+o resultado com `ia web status`.
+
 ### O que o painel oferece
 
 - **Varios agentes ao vivo.** Abra Copilot, Claude Code, Codex, Antigravity,

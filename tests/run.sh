@@ -11,6 +11,9 @@ cleanup_tests() {
     if [[ -f ${panel_state:-/nonexistent}/webui.sh ]]; then
         run_panel_webui stop todos > /dev/null 2>&1 || true
     fi
+    if [[ -f ${TERMUX_AI_TEST_HANG_PID:-/nonexistent} ]]; then
+        kill "$(< "$TERMUX_AI_TEST_HANG_PID")" 2> /dev/null || true
+    fi
     rm -rf -- "$test_root"
 }
 trap cleanup_tests EXIT
@@ -23,6 +26,7 @@ export TERMUX_AI_TEST_CALLS="$test_root/proot-calls"
 export TERMUX_AI_TEST_VERSIONS="$test_root/versions.txt"
 export TERMUX_AI_TEST_DIAG="$test_root/diagnostics.txt"
 export TERMUX_AI_TEST_UPDATES="$test_root/updates.log"
+export TERMUX_AI_TEST_HANG_PID="$test_root/hung-proot.pid"
 export PATH="$test_root/bin:$PATH"
 unset TERMUX_AI_GUEST PROOT_VERBOSE
 
@@ -46,6 +50,13 @@ for index in "${!arguments[@]}"; do
                 fi
                 ;;
             start)
+                printf "Warning: option '--no-kill-on-exit' is enabled, after logout your session will be blocked until all processes are terminated.\n" >&2
+                # Como o PRoot real: o script termina, mas o processo segue vivo enquanto houver servicos no Linux.
+                if [[ -n ${TERMUX_AI_TEST_WEB_REAL:-} ]]; then
+                    printf '%s\n' "$$" > "$TERMUX_AI_TEST_HANG_PID"
+                    bash "$TERMUX_AI_TEST_WEB_REAL" "${arguments[@]:index + 2}" || true
+                    exec sleep 60
+                fi
                 web_target="${arguments[index + 3]:-}"
                 case "$web_target" in
                     padrao) web_started=painel ;;
@@ -67,6 +78,11 @@ for index in "${!arguments[@]}"; do
                         embedding) printf 'embedding iniciado em 127.0.0.1:8085 (PID 14).\n' ;;
                     esac
                 done
+                if [[ -n ${TERMUX_AI_TEST_WEB_HANG:-} ]]; then
+                    printf '%s\n' "$$" > "$TERMUX_AI_TEST_HANG_PID"
+                    [[ ${TERMUX_AI_TEST_WEB_NO_MARKER:-} == 1 ]] || printf '__WEBUI_FIM__ %s\n' "${TERMUX_AI_TEST_WEB_EXIT:-0}"
+                    exec sleep "$TERMUX_AI_TEST_WEB_HANG"
+                fi
                 exit "${TERMUX_AI_TEST_WEB_EXIT:-0}"
                 ;;
         esac
@@ -95,6 +111,11 @@ expect_failure() {
     if "$@" > "$test_root/expected-failure.log" 2>&1; then
         fail_test "$description"
     fi
+}
+
+stop_hung_proot() {
+    kill "$(< "$TERMUX_AI_TEST_HANG_PID")" 2> /dev/null || true
+    rm -f "$TERMUX_AI_TEST_HANG_PID"
 }
 
 cd "$test_root/project with spaces"
@@ -343,6 +364,38 @@ if compgen -G "$launcher_state/web/active.*" > /dev/null; then
     fail_test 'marked a panel that never answered as active'
 fi
 
+# O PRoot real so volta quando o ultimo processo do Linux termina: o launcher nao espera por ele nem o encerra.
+: > "$TERMUX_AI_TEST_WAKELOCK_LOG"
+hang_status=0
+TERMUX_AI_TEST_WEB_HANG=60 TMPDIR="$test_root/web-tmp" timeout 30 bash "$project_root/bin/ia" web start > "$test_root/web-hang.log" 2>&1 || hang_status=$?
+assert_equal "$hang_status" 0 'returns while PRoot keeps the web services alive'
+kill -0 "$(< "$TERMUX_AI_TEST_HANG_PID")" 2> /dev/null || fail_test 'ended the PRoot session that keeps the web services alive'
+mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+assert_equal "${actual_args[11]}" --marcador 'asks the controller to report when it ends'
+grep -Fxq "Painel: $panel_link" "$test_root/web-hang.log" || fail_test 'lost the panel link while PRoot kept running'
+if grep -Fq -e __WEBUI_FIM__ -e no-kill-on-exit "$test_root/web-hang.log"; then
+    fail_test 'showed the internal end marker or the PRoot warning'
+fi
+assert_equal "$(< "$TERMUX_AI_TEST_WAKELOCK_LOG")" lock 'holds the wake-lock once the panel is up'
+assert_equal "$(ls -A "$test_root/web-tmp")" '' 'removes the start logs while PRoot is still running'
+stop_hung_proot
+hang_status=0
+TERMUX_AI_TEST_WEB_HANG=60 TERMUX_AI_TEST_WEB_STARTED=painel TERMUX_AI_TEST_WEB_EXIT=7 timeout 30 bash "$project_root/bin/ia" web start todos > "$test_root/web-hang.log" 2>&1 || hang_status=$?
+assert_equal "$hang_status" 7 'reports the status that the controller wrote in its marker'
+if grep -Fq 'Acesso restrito' "$test_root/web-hang.log"; then
+    fail_test 'a failed start was reported as ready while PRoot kept running'
+fi
+stop_hung_proot
+hang_status=0
+TERMUX_AI_TEST_WEB_HANG=60 TERMUX_AI_TEST_WEB_NO_MARKER=1 TERMUX_AI_WEB_START_TIMEOUT=2 timeout 30 bash "$project_root/bin/ia" web start > "$test_root/web-hang.log" 2>&1 || hang_status=$?
+assert_equal "$hang_status" 1 'gives up on a controller that never reports its end'
+grep -Fq 'nao terminou de iniciar em 2 s' "$test_root/web-hang.log" || fail_test 'did not explain the start timeout'
+stop_hung_proot
+bash "$project_root/bin/ia" web stop
+if compgen -G "$launcher_state/web/active.*" > /dev/null; then
+    fail_test 'left an active marker after stopping the services that PRoot kept alive'
+fi
+
 expect_failure 'WebUI ran inside the Linux guest' env TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" web status
 grep -q 'Use ia web no Termux' "$test_root/expected-failure.log"
 for invalid_web in 'start network' 'start padrao' 'abrir terminal' 'bogus' 'start painel extra'; do
@@ -495,6 +548,43 @@ if compgen -G "$panel_state/web/*.pid" > /dev/null; then
     fail_test 'left a service marker after stopping everything'
 fi
 printf '%s\n' 'PASS real panel service: private token, loopback terminal bridge, restarts, port conflicts and token rotation'
+
+# Com --marcador o controlador sempre termina com "__WEBUI_FIM__ <status>": o launcher le o fim do script por essa linha.
+assert_equal "$(run_panel_webui status painel | tail -n 1)" 'painel parado' 'keeps the end marker off unless it is requested'
+assert_equal "$(run_panel_webui status painel --marcador | tail -n 1)" '__WEBUI_FIM__ 0' 'reports the end of a successful run'
+marker_status=0
+marker_out="$(run_panel_webui start bogus --marcador 2>&1)" || marker_status=$?
+assert_equal "$marker_status" 1 'keeps the exit status when the end marker is requested'
+assert_equal "$(tail -n 1 <<< "$marker_out")" '__WEBUI_FIM__ 1' 'reports the end of a failed run'
+grep -Fq 'Alvo invalido para start: bogus' <<< "$marker_out" || fail_test 'lost the failure message when the end marker is requested'
+
+# Ponta a ponta: o launcher inicia o webui.sh de verdade e o PRoot de mentira segue vivo, como o real, com o painel ativo.
+printf 'name=ubuntu\nuser=root\n' > "$launcher_state/linux.conf"
+cp "$project_root/scripts/webui.sh" "$launcher_state/webui.sh"
+cat > "$test_root/web-real.sh" <<'REAL'
+#!/usr/bin/env bash
+cd "$TERMUX_AI_TEST_PANEL_WORK" || exit 1
+exec env HOME="$TERMUX_AI_TEST_PANEL_HOME" PATH="$TERMUX_AI_TEST_REAL_PATH" bash "$TERMUX_AI_TEST_STAGE_INPUT" "$@"
+REAL
+chmod +x "$test_root/web-real.sh"
+e2e_status=0
+TERMUX_AI_TEST_WEB_REAL="$test_root/web-real.sh" TERMUX_AI_TEST_PANEL_WORK="$panel_work" TERMUX_AI_TEST_PANEL_HOME="$panel_home" \
+    TERMUX_AI_TEST_REAL_PATH="$real_path" TERMUX_AI_PANEL_PORT="$panel_port" TERMUX_AI_PANEL_TTYD_PORT="$panel_ttyd_port" \
+    timeout 90 bash "$project_root/bin/ia" web start painel > "$test_root/web-e2e.log" 2>&1 || e2e_status=$?
+assert_equal "$e2e_status" 0 'starts the real controller while PRoot keeps running'
+kill -0 "$(< "$TERMUX_AI_TEST_HANG_PID")" 2> /dev/null || fail_test 'the PRoot session ended while the panel was supposed to be active'
+panel_token="$(< "$panel_state/web/token")"
+grep -Fxq "Painel: http://127.0.0.1:$panel_port/$panel_token/" "$test_root/web-e2e.log" || fail_test "the launcher lost the real panel link: $(< "$test_root/web-e2e.log")"
+if grep -Fq -e __WEBUI_FIM__ -e no-kill-on-exit "$test_root/web-e2e.log"; then
+    fail_test 'the launcher showed the end marker or the PRoot warning for the real controller'
+fi
+assert_equal "$(panel_status_code "http://127.0.0.1:$panel_port/$panel_token/")" 200 'keeps answering after the launcher returned'
+bash "$project_root/bin/ia" web stop > /dev/null
+run_panel_webui stop todos > /dev/null
+stop_hung_proot
+: > "$launcher_state/webui.sh"
+rm "$launcher_state/linux.conf" "$test_root/web-real.sh"
+printf '%s\n' 'PASS WebUI start returns while PRoot keeps the services alive: end marker, timeout and real controller'
 
 for tool_name in claude antigravity agy opencode hermes; do
     if TERMUX_AI_GUEST=1 bash "$project_root/bin/ia" "$tool_name" > "$test_root/nested.log" 2>&1; then
