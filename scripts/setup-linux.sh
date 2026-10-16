@@ -13,7 +13,8 @@ optional_tools=(hermes)
 version_pattern='([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?'
 antigravity_manifest_base='https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests'
 hermes_installer_url='https://hermes-agent.nousresearch.com/install.sh'
-hermes_release_url='https://api.github.com/repos/NousResearch/hermes-agent/releases/latest'
+hermes_release_url='https://github.com/NousResearch/hermes-agent/releases/latest'
+hermes_tag_prefix='https://github.com/NousResearch/hermes-agent/releases/tag/'
 
 fail() {
     printf 'Erro: %s\n' "$*" >&2
@@ -217,17 +218,17 @@ install_antigravity() {
 }
 
 # Imprime a versao da ultima release estavel do Hermes (so o esquema 0.x.y; calendario e prerelease sao ignorados).
+# Le o redirecionamento de /releases/latest, que o GitHub ja resolve para a ultima release que nao e rascunho nem
+# prerelease. A API REST nao serve: ela limita consultas anonimas a 60 por hora por IP e quebraria atras de NAT.
 hermes_latest() {
-    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
-        --connect-timeout 15 --max-time 30 --header 'Accept: application/vnd.github+json' \
-        --output "$work_dir/hermes-release.json" "$hermes_release_url" || return 1
-    node - "$work_dir/hermes-release.json" <<'NODE' || return 1
-const { readFileSync } = require('node:fs');
-const release = JSON.parse(readFileSync(process.argv[2], 'utf8'));
-const match = /^v?([0-9]+\.[0-9]+\.[0-9]+)$/.exec(String(release.tag_name ?? ''));
-if (!match || release.draft || release.prerelease || Number(match[1].split('.')[0]) >= 1000) process.exit(1);
-console.log(match[1]);
-NODE
+    local location tag
+    location="$(curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+        --connect-timeout 15 --max-time 30 --output /dev/null --write-out '%{redirect_url}' \
+        "$hermes_release_url")" || return 1
+    [[ $location == "$hermes_tag_prefix"* ]] || return 1
+    tag="${location#"$hermes_tag_prefix"}"
+    [[ $tag =~ ^v?([0-9]{1,3})\.([0-9]+)\.([0-9]+)$ ]] || return 1
+    printf '%s.%s.%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"
 }
 
 # O instalador oficial recusa o ambiente do Termux; o Linux convidado e um Linux comum.

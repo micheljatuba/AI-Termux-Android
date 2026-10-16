@@ -1418,10 +1418,14 @@ cat > "$test_root/bin/curl" <<'MOCK'
 set -euo pipefail
 destination=''
 source_url=''
+write_out=''
+follows_redirects=0
 printf '%s\n' "$*" >> "$TERMUX_AI_TEST_CURL_ARGS"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --output) destination="$2"; shift ;;
+        --write-out) write_out="$2"; shift ;;
+        --location) follows_redirects=1 ;;
         https://*) source_url="$1" ;;
     esac
     shift
@@ -1457,9 +1461,14 @@ NODE
         cp "$TERMUX_AI_TEST_AGY_PAYLOAD" "$destination"
         ;;
     https://registry.npmjs.org/) exit "${TERMUX_AI_TEST_NETWORK_FAILURE:-0}" ;;
-    https://api.github.com/repos/NousResearch/hermes-agent/releases/latest)
-        [[ -n ${TERMUX_AI_TEST_HERMES_RELEASE:-} && $TERMUX_AI_TEST_HERMES_RELEASE != fail ]] || exit 22
-        printf '%s\n' "$TERMUX_AI_TEST_HERMES_RELEASE" > "$destination"
+    https://github.com/NousResearch/hermes-agent/releases/latest)
+        # O curl real so imprime a tag se NAO seguir o redirecionamento e se a resposta for descartada.
+        [[ $follows_redirects == 0 && $write_out == '%{redirect_url}' && $destination == /dev/null ]] || exit 2
+        case "${TERMUX_AI_TEST_HERMES_RELEASE:-fail}" in
+            fail) exit 22 ;;
+            none) ;;
+            *) printf '%s' "$TERMUX_AI_TEST_HERMES_RELEASE" ;;
+        esac
         ;;
     https://hermes-agent.nousresearch.com/install.sh)
         case "${TERMUX_AI_TEST_HERMES_INSTALLER:-ok}" in
@@ -1632,15 +1641,21 @@ hermes_version_line() {
     bash "$setup_script" versions | awk -F'\t' '$2 == "hermes"'
 }
 hermes_release() {
-    printf '{"tag_name":"%s","draft":%s,"prerelease":%s}' "$1" "${2:-false}" "${3:-false}"
+    printf 'https://github.com/NousResearch/hermes-agent/releases/tag/%s' "$1"
 }
 assert_equal "$(TERMUX_AI_TEST_HERMES_RELEASE="$(hermes_release v0.23.4)" hermes_version_line)" \
     $'@version\thermes\t-\t0.23.4\tmissing' 'offers the latest stable Hermes release when it is missing'
-for ignored_release in "$(hermes_release v2026.9.24)" "$(hermes_release v0.23.5 false true)" "$(hermes_release v0.23.5 true false)" \
-    "$(hermes_release v1000.0.1)" 'not json' fail ''; do
+assert_equal "$(TERMUX_AI_TEST_HERMES_RELEASE="$(hermes_release 0.23.4)" hermes_version_line)" \
+    $'@version\thermes\t-\t0.23.4\tmissing' 'accepts a release tag without the v prefix'
+for ignored_release in "$(hermes_release v2026.9.24)" "$(hermes_release v1000.0.1)" "$(hermes_release v0.23.5-rc1)" \
+    "$(hermes_release v0.23)" "$(hermes_release v0.23.5/extra)" "$(hermes_release '')" 'https://github.com/NousResearch/hermes-agent/releases' \
+    'https://example.invalid/NousResearch/hermes-agent/releases/tag/v9.9.9' \
+    'https://github.com/NousResearch/hermes-agent/releases/tag/v0.23.5?x=1' none fail ''; do
     assert_equal "$(TERMUX_AI_TEST_HERMES_RELEASE="$ignored_release" hermes_version_line)" \
         $'@version\thermes\t-\t'"$hermes_pin"$'\tmissing' "falls back to the validated Hermes version for: $ignored_release"
 done
+grep -Fq -- '--write-out %{redirect_url}' "$TERMUX_AI_TEST_CURL_ARGS" \
+    || fail_test 'the Hermes release lookup does not read the latest-release redirect'
 install -m 755 "$TERMUX_AI_TEST_HERMES_STUB" "$HOME/.local/bin/hermes"
 printf '0.22.0\n' > "$HOME/.hermes-test-version"
 assert_equal "$(TERMUX_AI_TEST_HERMES_RELEASE="$(hermes_release v0.22.1)" hermes_version_line)" \
