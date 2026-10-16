@@ -28,7 +28,7 @@ instale o [Hermes Agent](#hermes-agent-opcional).
 sem depender de um PC no uso diario.
 
 <p align="center">
-    <img src="docs/images/menu-android.png" width="760" alt="Menu do AI Termux Android com os cinco agentes, o terminal Linux, versoes, atualizacao e diagnostico">
+    <img src="docs/images/menu-android.png" width="760" alt="Menu do AI Termux Android com os agentes, o terminal Linux, o EmbeddingGemma, versoes e atualizacoes, diagnostico, o Hermes Agent opcional e o painel web">
     <br>
     <sub>Abra com ia. Escolha pelo numero. Comece no seu projeto.</sub>
 </p>
