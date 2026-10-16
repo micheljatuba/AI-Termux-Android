@@ -4,9 +4,13 @@ set -euo pipefail
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 setup_script="$project_root/scripts/setup-linux.sh"
 test_root="$(mktemp -d)"
+fake_pids=()
 cleanup_tests() {
     if [[ -n ${port_blocker:-} ]]; then
         kill "$port_blocker" 2> /dev/null || true
+    fi
+    if ((${#fake_pids[@]} > 0)); then
+        kill -KILL "${fake_pids[@]}" 2> /dev/null || true
     fi
     if [[ -f ${panel_state:-/nonexistent}/webui.sh ]]; then
         run_panel_webui stop todos > /dev/null 2>&1 || true
@@ -459,6 +463,9 @@ panel_ttyd_port="$(free_port)"
 while [[ $panel_ttyd_port == "$panel_port" ]]; do
     panel_ttyd_port="$(free_port)"
 done
+# Socket proprio: "stop" encerra o tmux do painel por PID e nao pode alcancar o tmux de verdade de quem roda o teste.
+panel_socket="termux-ai-test-$$"
+export TERMUX_AI_HUB_SOCKET="$panel_socket"
 run_panel_webui() {
     (cd "$panel_work" && env HOME="$panel_home" PATH="$real_path" TERMUX_AI_PANEL_PORT="$panel_port" \
         TERMUX_AI_PANEL_TTYD_PORT="$panel_ttyd_port" bash "$panel_state/webui.sh" "$@")
@@ -548,6 +555,117 @@ if compgen -G "$panel_state/web/*.pid" > /dev/null; then
     fail_test 'left a service marker after stopping everything'
 fi
 printf '%s\n' 'PASS real panel service: private token, loopback terminal bridge, restarts, port conflicts and token rotation'
+
+# O tmux do painel vive no PRoot que iniciou o painel e nenhuma outra instancia o alcanca ("access not allowed", com
+# codigo de saida 0). Por isso "stop" encerra o tmux pelo PID e "start" so descarta o que sobrou de um painel parado.
+process_alive() {
+    local stat
+    { read -r stat < "/proc/$1/stat"; } 2> /dev/null || return 1
+    [[ ${stat##*) } != Z* ]]
+}
+fake_pid=''
+# Dorme com a linha de comando de "$1". O SIGTERM ignorado vale tambem depois do exec: com "stubborn" so o SIGKILL derruba.
+fake_sleeper() {
+    [[ ${2:-} != stubborn ]] || trap '' TERM
+    exec -a "$1" sleep 300
+}
+# Processo de mentira com a linha de comando de "name". Com "reaped" o pai recolhe o processo quando ele morre e o PID
+# some de /proc; sem isso, quem adota o orfao decide se sobra um zumbi. O "stop" tem de dar conta dos dois casos.
+fake_process() {
+    local name="$1" pid_file="$test_root/fake-process.pid" cmdline
+    rm -f "$pid_file"
+    if [[ ${2:-} == reaped ]]; then
+        ( ( fake_sleeper "$name" & printf '%s\n' "$!" > "$pid_file"; wait ) < /dev/null > /dev/null 2>&1 & )
+    else
+        ( ( fake_sleeper "$name" "${2:-}" ) < /dev/null > /dev/null 2>&1 & printf '%s\n' "$!" > "$pid_file" )
+    fi
+    for _ in {1..50}; do
+        [[ -s $pid_file ]] && break
+        sleep 0.1
+    done
+    [[ -s $pid_file ]] || fail_test "the stand-in process did not start: $name"
+    fake_pid="$(< "$pid_file")"
+    fake_pids+=("$fake_pid")
+    for _ in {1..50}; do
+        cmdline="$(tr '\0' ' ' < "/proc/$fake_pid/cmdline" 2> /dev/null || true)"
+        if [[ $cmdline == "$name "* ]]; then
+            return 0
+        fi
+        sleep 0.1
+    done
+    fail_test "the stand-in process never took the command line: $name"
+}
+export TERMUX_AI_TEST_TMUX_BLOCKED="$test_root/tmux-blocked"
+cat > "$panel_home/.local/bin/tmux" <<'MOCK'
+#!/usr/bin/env bash
+if [[ -e $TERMUX_AI_TEST_TMUX_BLOCKED ]]; then
+    printf '%s\n' 'access not allowed' >&2
+    exit 0
+fi
+printf '%s\n' 'ia-shell-1: 1 windows'
+MOCK
+chmod 755 "$panel_home/.local/bin/tmux"
+
+# O cliente some de /proc logo apos o SIGTERM e vem antes do servidor na lista; o servidor ignora o SIGTERM, entao so o
+# SIGKILL o derruba. Se a checagem de quem sobrou parasse no PID que sumiu, o "stop" daria o servidor por encerrado.
+fake_process "tmux -L $panel_socket -u attach-session -t =ia-shell-1" reaped
+tmux_client="$fake_pid"
+fake_process "tmux -L $panel_socket -u -f /x/tmux.conf new-session -d -s ia-shell-1" stubborn
+tmux_server="$fake_pid"
+fake_process 'tmux -L outro-painel -u new-session -d'
+tmux_other="$fake_pid"
+fake_process "bash -c tmux -L $panel_socket kill-server"
+tmux_wrapper="$fake_pid"
+tmux_stop="$(run_panel_webui stop painel 2>&1)" || fail_test "stop failed while ending the panel tmux: $tmux_stop"
+grep -Fxq 'Sessoes de agente do painel encerradas.' <<< "$tmux_stop" || fail_test "stop did not report the ended tmux sessions: $tmux_stop"
+for tmux_pid in "$tmux_server" "$tmux_client"; do
+    ! process_alive "$tmux_pid" || fail_test "stop left the panel tmux running (PID $tmux_pid)"
+done
+for tmux_pid in "$tmux_other" "$tmux_wrapper"; do
+    process_alive "$tmux_pid" || fail_test "stop ended a process that is not the panel tmux (PID $tmux_pid)"
+done
+assert_equal "$(run_panel_webui stop painel | tail -n 1)" 'painel-ttyd nao esta ativo.' 'stays quiet when the panel has no tmux'
+TERMUX_AI_HUB_SOCKET=outro-painel run_panel_webui stop painel > /dev/null
+! process_alive "$tmux_other" || fail_test 'stop ignored TERMUX_AI_HUB_SOCKET'
+process_alive "$tmux_wrapper" || fail_test 'stop ended a command that only mentions the tmux socket'
+kill "$tmux_wrapper"
+
+# Parado o painel, um tmux que recusa o acesso e de um painel anterior: sai do caminho e o painel novo avisa do que houve.
+: > "$TERMUX_AI_TEST_TMUX_BLOCKED"
+fake_process "tmux -L $panel_socket -u -f /x/tmux.conf new-session -d -s ia-shell-1"
+tmux_server="$fake_pid"
+tmux_start="$(run_panel_webui start painel)"
+grep -Fq 'estava inacessivel' <<< "$tmux_start" || fail_test "start did not report the dropped tmux: $tmux_start"
+! process_alive "$tmux_server" || fail_test 'start kept a tmux that refuses access'
+tmux_url="http://127.0.0.1:$panel_port/$(< "$panel_state/web/token")/"
+grep -Fxq "Painel: $tmux_url" <<< "$tmux_start" || fail_test "the panel did not start after dropping the tmux: $tmux_start"
+tmux_error="$(panel_curl "${tmux_url}api/state" | env PATH="$real_path" node -e 'let text = ""; process.stdin.on("data", (chunk) => { text += chunk; }).on("end", () => { console.log(JSON.parse(text).tmuxError ?? "nenhum"); });')" \
+    || fail_test 'could not read the state of the panel with the blocked tmux'
+[[ $tmux_error == *'recusou o acesso'* ]] || fail_test "the panel did not explain the blocked tmux: $tmux_error"
+
+# Com o painel ativo o tmux em uso e o dele: um start repetido nao pode derruba-lo, mesmo que daqui ele pareca bloqueado.
+fake_process "tmux -L $panel_socket -u new-session -d -s ia-shell-2"
+tmux_server="$fake_pid"
+tmux_again="$(run_panel_webui start painel)"
+grep -Fq 'painel ja esta ativo' <<< "$tmux_again" || fail_test "a second start did not find the active panel: $tmux_again"
+process_alive "$tmux_server" || fail_test 'a second start ended the tmux of the panel that is running'
+run_panel_webui stop painel > /dev/null
+! process_alive "$tmux_server" || fail_test 'stop kept the tmux of the panel'
+
+# Um tmux que o painel alcanca (fora do PRoot) e mantido, com suas sessoes.
+rm "$TERMUX_AI_TEST_TMUX_BLOCKED"
+fake_process "tmux -L $panel_socket -u new-session -d -s ia-shell-3"
+tmux_server="$fake_pid"
+tmux_start="$(run_panel_webui start painel)"
+if grep -Fq 'inacessivel' <<< "$tmux_start"; then
+    fail_test "start dropped a tmux that the panel can reach: $tmux_start"
+fi
+process_alive "$tmux_server" || fail_test 'start ended a tmux that the panel can reach'
+run_panel_webui stop painel > /dev/null
+! process_alive "$tmux_server" || fail_test 'stop kept the tmux of the panel'
+rm "$panel_home/.local/bin/tmux"
+unset TERMUX_AI_TEST_TMUX_BLOCKED
+printf '%s\n' 'PASS panel tmux lifecycle: stop ends the tmux by PID, start only drops a blocked one while the panel is stopped'
 
 # Com --marcador o controlador sempre termina com "__WEBUI_FIM__ <status>": o launcher le o fim do script por essa linha.
 assert_equal "$(run_panel_webui status painel | tail -n 1)" 'painel parado' 'keeps the end marker off unless it is requested'

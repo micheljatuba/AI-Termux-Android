@@ -242,6 +242,7 @@ test('/api/state descreve agentes, sessões, memória e limites', async () => {
     assert.deepEqual(json.mem, { totalMb: 4000, availableMb: 3000 });
     assert.deepEqual(json.limits, { maxSessions: 3, minFreeMb: 512 });
     assert.equal(json.tmux, true);
+    assert.equal(json.tmuxError, null);
     assert.equal(json.runs.active, 0);
     assert.deepEqual(json.agents.map((agent) => agent.id), ['copilot', 'claude', 'codex', 'agy', 'opencode', 'hermes', 'shell']);
     assert.deepEqual(
@@ -249,6 +250,27 @@ test('/api/state descreve agentes, sessões, memória e limites', async () => {
       { 'ia-claude-1': 'working', 'ia-codex-1': 'idle', 'ia-agy-1': 'dead' },
     );
     assert.equal(json.sessions[1].idleSec, 60);
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test('/api/state continua respondendo quando o tmux recusa o acesso e explica o motivo em tmuxError', async () => {
+  const env = await setup();
+  try {
+    env.sessions.list = async () => {
+      throw new HubError(503, 'O tmux dos agentes está em outra instância do PRoot');
+    };
+    const blocked = await env.api('GET', '/api/state');
+    assert.equal(blocked.status, 200);
+    assert.deepEqual(blocked.json.sessions, []);
+    assert.equal(blocked.json.tmuxError, 'O tmux dos agentes está em outra instância do PRoot');
+    env.sessions.list = async () => {
+      throw new Error('detalhe interno em /data/data/segredo');
+    };
+    const unexpected = await env.api('GET', '/api/state');
+    assert.equal(unexpected.status, 200);
+    assert.equal(unexpected.json.tmuxError, 'Não foi possível consultar o tmux dos agentes');
   } finally {
     await env.cleanup();
   }

@@ -11,6 +11,7 @@ panel_port="${TERMUX_AI_PANEL_PORT:-7690}"
 panel_ttyd_port="${TERMUX_AI_PANEL_TTYD_PORT:-7681}"
 panel_pattern='termux-ai/hub/server.mjs'
 panel_ttyd_pattern="ttyd -i 127.0.0.1 -p $panel_ttyd_port"
+hub_socket="${TERMUX_AI_HUB_SOCKET:-termux-ai}"
 terminal_pattern='ttyd -i lo -p 7680'
 embedding_pattern='embeddinggemma_web.py --host 127.0.0.1 --port 8085'
 token_pattern='^[0-9a-f]{32}$'
@@ -87,6 +88,74 @@ stop_service() {
     return 1
 }
 
+# PIDs do tmux do painel (servidor e clientes), lidos de /proc. Dentro do PRoot cada instancia so alcanca o tmux da
+# propria instancia ("access not allowed" para as outras, com codigo de saida 0), entao nao da para mandar o tmux se
+# encerrar: o servidor e identificado pela linha de comando e sinalizado direto.
+tmux_pids() {
+    local IFS=' ' file argv line first pid
+    for file in /proc/[0-9]*/cmdline; do
+        { mapfile -d '' -t argv < "$file"; } 2>/dev/null || continue
+        line="${argv[*]}"
+        first="${line%% *}"
+        [[ ${first##*/} == tmux ]] || continue
+        [[ ${line#"$first "} == "-L $hub_socket" || ${line#"$first "} == "-L $hub_socket "* ]] || continue
+        pid="${file#/proc/}"
+        printf '%s\n' "${pid%/cmdline}"
+    done
+}
+
+# Zumbi conta como encerrado: ele so espera o pai recolher o codigo de saida. Com "read" e nao com $(< arquivo): se o
+# processo ja sumiu, o $(< ...) derruba o shell inteiro, mesmo com "|| return 1", e o live_pids pararia nesse PID.
+pid_running() {
+    local stat
+    { read -r stat < "/proc/$1/stat"; } 2>/dev/null || return 1
+    [[ ${stat##*) } != Z* ]]
+}
+
+live_pids() {
+    local pid
+    for pid in "$@"; do
+        if pid_running "$pid"; then
+            printf '%s\n' "$pid"
+        fi
+    done
+}
+
+# SIGTERM e, para quem nao sair em ~5 s, SIGKILL. Sem sobras o retorno e 0.
+kill_tmux() {
+    local pids signal
+    mapfile -t pids < <(tmux_pids)
+    ((${#pids[@]} > 0)) || return 0
+    for signal in TERM KILL; do
+        kill "-$signal" "${pids[@]}" 2>/dev/null || true
+        for _ in {1..25}; do
+            mapfile -t pids < <(live_pids "${pids[@]}")
+            ((${#pids[@]} > 0)) || return 0
+            sleep 0.2
+        done
+    done
+    printf 'O tmux do painel nao encerrou (PID %s); investigue antes de tentar novamente.\n' "${pids[*]}" >&2
+    return 1
+}
+
+stop_tmux() {
+    [[ -n "$(tmux_pids)" ]] || return 0
+    kill_tmux
+    printf '%s\n' 'Sessoes de agente do painel encerradas.'
+}
+
+# Um tmux que sobrou de um painel anterior fica inalcancavel para o painel novo (cada ia web start e outra instancia
+# do PRoot) e travaria a abertura de sessoes. Um tmux acessivel, como fora do PRoot, e mantido.
+drop_blocked_tmux() {
+    local reply
+    [[ -n "$(tmux_pids)" ]] || return 0
+    reply="$(timeout 10 tmux -L "$hub_socket" list-sessions 2>&1 || true)"
+    [[ $reply == *'access not allowed'* ]] || return 0
+    if kill_tmux; then
+        printf '%s\n' 'Um tmux de um painel anterior estava inacessivel nesta instancia do Linux; suas sessoes foram encerradas.'
+    fi
+}
+
 panel_token() {
     local token_file="$web_dir/token" token=''
     if [[ -f $token_file ]]; then
@@ -132,6 +201,8 @@ start_panel() {
     done
     if ! command -v tmux >/dev/null 2>&1; then
         printf '%s\n' 'Aviso: tmux nao encontrado no Linux; o painel abre sem terminais ao vivo. Execute novamente bash install.sh no Termux.'
+    elif ! service_pid painel "$panel_pattern" >/dev/null; then
+        drop_blocked_tmux
     fi
     token="$(panel_token)"
     start_service painel-ttyd "$panel_ttyd_pattern" "$panel_ttyd_port" \
@@ -156,20 +227,12 @@ start_panel() {
     printf 'Painel: %s\n' "$(panel_url "$token")"
 }
 
-# As sessoes tmux dos agentes sobrevivem ao painel de proposito: assim nenhum agente em andamento se perde.
-report_sessions() {
-    local count
-    command -v tmux >/dev/null 2>&1 || return 0
-    count="$(tmux -L termux-ai list-sessions 2>/dev/null | wc -l)" || count=0
-    if ((count > 0)); then
-        printf '%s sessao(oes) de agente seguem ativas em segundo plano; para encerrar todas: ia terminal -c "tmux -L termux-ai kill-server"\n' "$count"
-    fi
-}
-
+# As sessoes dos agentes vivem no tmux do painel e so existem enquanto ele roda: sem o painel nenhuma instancia nova
+# do PRoot as alcanca, entao parar o painel encerra tambem o tmux (e os agentes dentro dele).
 stop_panel() {
     stop_service painel "$panel_pattern"
     stop_service painel-ttyd "$panel_ttyd_pattern"
-    report_sessions
+    stop_tmux
 }
 
 start_terminal() {

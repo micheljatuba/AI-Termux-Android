@@ -149,7 +149,7 @@ opcional estiver instalado, sua interface sobe junto em `http://127.0.0.1:8085`.
 | `ia web` | Inicia o painel (e o EmbeddingGemma, se instalado) |
 | `ia web abrir` | Inicia o painel e abre o link no navegador |
 | `ia web status` | Mostra o que esta ativo; `ia web status painel` inclui o link |
-| `ia web stop` | Encerra os servicos e libera o wake-lock |
+| `ia web stop` | Encerra os servicos e as sessoes dos agentes, e libera o wake-lock |
 | `ia web start terminal` | Inicia so o terminal Linux com menu em `http://127.0.0.1:7680`, sem token |
 
 `start`, `stop` e `status` aceitam um alvo: `painel`, `terminal`, `embedding` ou
@@ -196,10 +196,13 @@ ia web
 <details>
 <summary>Sessoes, dois aparelhos e Android 12+</summary>
 
-- **As sessoes continuam depois de `ia web stop`**, de proposito, para nao
-  perder trabalho em andamento. Ao abrir o painel de novo, elas reaparecem. O
-  botao **✕** de um cartao encerra so aquele agente; para encerrar todos:
-  `ia terminal -c 'tmux -L termux-ai kill-server'`.
+- **As sessoes vivem enquanto o painel estiver ativo.** Fechar a aba, trocar de
+  aplicativo ou bloquear a tela nao as encerra, e ao voltar elas reaparecem.
+  `ia web stop` encerra o painel **e todas as sessoes**, com os agentes dentro
+  delas: no PRoot, cada `ia web` roda em uma instancia propria e so alcanca o
+  tmux da propria instancia, entao um tmux deixado para tras ficaria
+  inacessivel (`access not allowed`). O botao **✕** de um cartao encerra so
+  aquele agente.
 - **Dois aparelhos ou janelas na mesma sessao.** Com telas de tamanhos
   diferentes, o tmux mostra pontos (`·`) na area que sobra. Use uma tela por vez.
 - **Android 12 ou superior.** O sistema pode encerrar processos em segundo plano
@@ -738,8 +741,8 @@ logs privados ou backups. No OpenCode, as credenciais ficam em
 O terminal web com menu (`ia web start terminal`, sem token) e as sessoes do
 painel concedem ao usuario da sessao os mesmos acessos que um shell Linux local;
 mantenha-os em `127.0.0.1`, trate o link do painel como uma senha e encerre tudo
-com `ia web stop` ao terminar (as sessoes dos agentes seguem ativas ate voce
-encerra-las pelo painel ou com `ia terminal -c 'tmux -L termux-ai kill-server'`).
+com `ia web stop` ao terminar (isso tambem encerra as sessoes dos agentes do
+painel).
 
 <details>
 <summary>Onde ficam os dados e como fazer backup</summary>

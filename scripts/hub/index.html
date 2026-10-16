@@ -640,9 +640,11 @@ function renderHeader() {
 
 function renderBanner() {
   const banner = $('#banner');
-  const missing = S.state && !S.state.tmux;
-  banner.hidden = !missing;
-  if (missing) banner.textContent = 'O tmux não está instalado neste Linux, então não dá para abrir sessões de agentes. No Termux, rode: ia atualizar';
+  let message = '';
+  if (S.state && !S.state.tmux) message = 'O tmux não está instalado neste Linux, então não dá para abrir sessões de agentes. No Termux, rode: ia atualizar';
+  else if (S.state?.tmuxError) message = S.state.tmuxError;
+  banner.hidden = !message;
+  banner.textContent = message;
 }
 
 function updateTitle() {

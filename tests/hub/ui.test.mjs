@@ -57,6 +57,10 @@ test('todo $("#id") do script existe no HTML ou é criado pelo próprio script',
   assert.deepEqual([...used].filter((id) => !declared.has(id)), []);
 });
 
+test('o aviso do tmux sem acesso aparece no banner da página', () => {
+  assert.match(code, /function renderBanner\(\)[\s\S]*?S\.state\?\.tmuxError[\s\S]*?\n\}/);
+});
+
 test('o documento declara idioma, codificação e viewport para o tablet', () => {
   assert.match(page, /<html lang="pt-BR">/);
   assert.match(page, /<meta charset="utf-8">/i);

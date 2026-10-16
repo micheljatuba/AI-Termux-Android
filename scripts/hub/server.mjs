@@ -109,7 +109,14 @@ export function createHub({
   const sockets = new Set();
 
   async function state() {
-    const [list, mem] = await Promise.all([sessions.list().catch(() => []), memInfo()]);
+    let tmuxError = null;
+    const [list, mem] = await Promise.all([
+      sessions.list().catch((error) => {
+        tmuxError = error instanceof HubError ? error.message : 'Não foi possível consultar o tmux dos agentes';
+        return [];
+      }),
+      memInfo(),
+    ]);
     return {
       version,
       now: now(),
@@ -119,6 +126,7 @@ export function createHub({
       limits: { maxSessions: sessions.maxSessions, minFreeMb: sessions.minFreeMb },
       mem,
       tmux: Boolean(findExecutable(sessions.tmux, sessions.searchPath) ?? sessions.tmux.includes('/')),
+      tmuxError,
       runs: { active: orchestrator.list().filter((run) => run.status === 'running').length },
     };
   }

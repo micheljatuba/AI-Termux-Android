@@ -48,6 +48,11 @@ export async function readMemInfo(file = '/proc/meminfo') {
   }
 }
 
+// O tmux >= 3.4 recusa clientes de outra instancia do PRoot ("access not allowed") e ainda assim sai com codigo 0,
+// com a mensagem so em stderr: sem este teste a lista viria vazia e criar sessoes pareceria dar certo.
+const ACCESS_DENIED = /access not allowed/i;
+export const TMUX_BLOCKED_MESSAGE = 'O tmux dos agentes está em outra instância do PRoot e recusou o acesso. No Termux, rode "ia web stop" e depois "ia web".';
+
 function runTmux(bin, args, { input = null, timeoutMs = 8000, env = process.env } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, { env, stdio: [input == null ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
@@ -68,7 +73,8 @@ function runTmux(bin, args, { input = null, timeoutMs = 8000, env = process.env 
     });
     child.on('close', (code) => {
       clearTimeout(timer);
-      if (code === 0) resolve(stdout);
+      if (ACCESS_DENIED.test(stderr)) reject(new HubError(503, TMUX_BLOCKED_MESSAGE));
+      else if (code === 0) resolve(stdout);
       else reject(new HubError(500, stderr.trim() || `tmux saiu com código ${code}`));
     });
     if (input != null) {

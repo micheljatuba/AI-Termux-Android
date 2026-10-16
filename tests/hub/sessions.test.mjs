@@ -354,6 +354,40 @@ test('PID de servidor inválido nunca vira alvo de kill', { skip: skipFake }, as
   }
 });
 
+// tmux de mentira que recusa o acesso como o tmux >= 3.4 faz com outra instancia do PRoot: mensagem so em stderr.
+async function withBlockedTmux(exitCode, fn) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'hub-blocked-tmux-'));
+  try {
+    const bin = path.join(dir, 'tmux');
+    await writeFile(bin, `#!/bin/sh\necho 'access not allowed' >&2\nexit ${exitCode}\n`, { mode: 0o755 });
+    return await fn(bin);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+test('tmux que recusa o acesso (outra instância do PRoot) vira erro claro, não lista vazia nem 404', { skip: skipFake }, async () => {
+  for (const exitCode of [0, 1]) {
+    await withBlockedTmux(exitCode, async (tmux) => {
+      const sessions = new Sessions({ tmux, minFreeMb: 0, reapIntervalMs: 0 });
+      await rejects(sessions.list(), 503, /outra instância do PRoot.*ia web stop/);
+      await rejects(sessions.get('ia-claude-1'), 503, /recusou o acesso/);
+      await rejects(sessions.create({ agent: 'shell', dir: os.tmpdir() }), 503, /recusou o acesso/);
+      await rejects(sessions.kill('ia-claude-1'), 503, /recusou o acesso/);
+      await rejects(sessions.peek('ia-claude-1'), 503, /recusou o acesso/);
+      await rejects(sessions.peekAll(), 503, /recusou o acesso/);
+      await rejects(sessions.send('ia-claude-1', 'oi'), 503, /recusou o acesso/);
+    });
+  }
+});
+
+test('"access not allowed" impresso por um agente (stdout) não é confundido com a recusa do tmux', { skip: skipFake }, async () => {
+  await withFakeTmux([['access not allowed']], async (tmux) => {
+    const sessions = new Sessions({ tmux, previewTtlMs: 0 });
+    assert.deepEqual(await sessions.peek('ia-claude-1'), ['access not allowed']);
+  });
+});
+
 test('prévia: últimas linhas sem espaços finais, cache curto e peekAll', { skip }, async () => {
   const env = await setup();
   try {
