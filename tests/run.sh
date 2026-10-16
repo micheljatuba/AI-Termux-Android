@@ -2382,4 +2382,11 @@ assert cached2 == 1 and encoded2 == 0 and encoder.doc_calls == 1
 assert len(results2) == 1 and results2[0]["file"] == "valid.py"
 PYTEST
 printf '%s\n' 'PASS EmbeddingGemma file limits, symlink boundary and persistent embedding cache'
+# O PRoot nao abre /dev/fd/N: a substituicao de processo falha dentro do Linux ("No such file or directory"), coisa que
+# o Docker nao reproduz. Os scripts de scripts/ usam "$(...)" e "<<<" no lugar.
+for guest_script in "$project_root"/scripts/*.sh "$project_root"/scripts/hub/*.sh; do
+    if grep -nE '(^|[[:space:]])[<>]\(' "$guest_script"; then
+        fail_test "$guest_script uses process substitution, which does not work inside PRoot"
+    fi
+done
 printf '%s\n' 'PASS shell syntax and Linux line endings'

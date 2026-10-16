@@ -121,15 +121,19 @@ live_pids() {
     done
 }
 
-# SIGTERM e, para quem nao sair em ~5 s, SIGKILL. Sem sobras o retorno e 0.
+# SIGTERM e, para quem nao sair em ~5 s, SIGKILL. Sem sobras o retorno e 0. Nada de substituicao de processo aqui: o
+# PRoot nao abre /dev/fd/N e o mapfile falharia dentro do Linux.
 kill_tmux() {
-    local pids signal
-    mapfile -t pids < <(tmux_pids)
+    local pids=() list signal
+    list="$(tmux_pids)"
+    [[ -z $list ]] || mapfile -t pids <<< "$list"
     ((${#pids[@]} > 0)) || return 0
     for signal in TERM KILL; do
         kill "-$signal" "${pids[@]}" 2>/dev/null || true
         for _ in {1..25}; do
-            mapfile -t pids < <(live_pids "${pids[@]}")
+            list="$(live_pids "${pids[@]}")"
+            pids=()
+            [[ -z $list ]] || mapfile -t pids <<< "$list"
             ((${#pids[@]} > 0)) || return 0
             sleep 0.2
         done
