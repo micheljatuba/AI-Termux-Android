@@ -11,11 +11,13 @@ const LIST_FORMAT = [
   '#{session_name}',
   '#{pane_dead}',
   '#{pane_dead_status}',
+  '#{pane_dead_signal}',
   '#{window_activity}',
   '#{session_created}',
   '#{@ia_agent}',
   '#{@ia_dir}',
   '#{session_id}',
+  '#{pid}',
 ].join(SEP);
 
 // Teclas aceitas pelo painel (nome publico -> nome no tmux).
@@ -88,6 +90,7 @@ export class Sessions {
     memInfo = readMemInfo,
     searchPath = process.env.PATH ?? '',
     previewTtlMs = 1500,
+    reapIntervalMs = 500,
     env = process.env,
   } = {}) {
     this.tmux = tmux;
@@ -98,10 +101,12 @@ export class Sessions {
     this.memInfo = memInfo;
     this.searchPath = searchPath;
     this.previewTtlMs = previewTtlMs;
+    this.reapIntervalMs = reapIntervalMs;
     this.env = env;
     this.queue = Promise.resolve();
     this.previews = new Map();
     this.buffers = 0;
+    this.lastReap = 0;
   }
 
   #run(args, options = {}) {
@@ -124,21 +129,40 @@ export class Sessions {
       throw error;
     }
     const sessions = [];
+    let serverPid = 0;
+    let unreaped = false;
     for (const line of output.split('\n')) {
-      const [name, dead, deadStatus, activity, created, agent, dir, id] = line.split(SEP);
+      const [name, dead, deadStatus, deadSignal, activity, created, agent, dir, id, pid] = line.split(SEP);
       if (!name || !SESSION_NAME.test(name)) continue;
+      const exitStatus = deadStatus === '' || deadStatus === undefined ? null : Number(deadStatus);
+      serverPid = Number(pid) || serverPid;
+      if (dead === '1' && exitStatus === null && !deadSignal) unreaped = true;
       sessions.push({
         name,
         agent: agent || name.split('-')[1],
         dir: dir ?? '',
         dead: dead === '1',
-        exitStatus: deadStatus === '' || deadStatus === undefined ? null : Number(deadStatus),
+        exitStatus,
         activity: Number(activity) || 0,
         created: Number(created) || 0,
         order: Number(String(id ?? '').replace('$', '')) || 0,
       });
     }
+    if (unreaped) this.#reapChildren(serverPid);
     return sessions.sort((a, b) => a.order - b.order || a.created - b.created || a.name.localeCompare(b.name));
+  }
+
+  // Sob carga o tmux as vezes perde o SIGCHLD de um painel: o processo do agente vira zumbi e o codigo de saida nunca
+  // e informado. Um SIGCHLD extra faz o servidor recolher os filhos que ja terminaram (sem efeito se nao houver nenhum).
+  #reapChildren(pid) {
+    const now = Date.now();
+    if (!Number.isInteger(pid) || pid <= 1 || now - this.lastReap < this.reapIntervalMs) return;
+    this.lastReap = now;
+    try {
+      process.kill(pid, 'SIGCHLD');
+    } catch {
+      // o servidor ja encerrou
+    }
   }
 
   async get(name) {

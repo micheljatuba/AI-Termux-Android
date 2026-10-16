@@ -265,10 +265,11 @@ test('quando o agente sai, o código de saída é informado e reiniciar recomeç
     await env.sessions.create({ agent: 'claude', dir: env.stub.work });
     await waitUntil(async () => (await env.screen('ia-claude-1')).includes('PRONTO-claude'));
     await env.sessions.send('ia-claude-1', '/sair');
+    // Sob carga o tmux pode perder o SIGCHLD do painel; o hub reenvia o sinal ao servidor até o código de saída aparecer.
     const ended = await waitUntil(async () => {
       const found = await env.sessions.get('ia-claude-1');
-      return found.dead ? found : null;
-    }, { message: 'o agente deveria encerrar' });
+      return found.dead && found.exitStatus !== null ? found : null;
+    }, { message: 'o agente deveria encerrar com um código de saída' });
     assert.equal(ended.exitStatus, 3);
 
     await env.sessions.restart('ia-claude-1');
@@ -282,6 +283,74 @@ test('quando o agente sai, o código de saída é informado e reiniciar recomeç
     await waitUntil(async () => (await env.stub.readLog('claude')).includes('depois do reinício'));
   } finally {
     await env.cleanup();
+  }
+});
+
+// tmux de mentira: ignora os argumentos e imprime uma listagem fixa no formato de LIST_FORMAT.
+async function withFakeTmux(rows, fn) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'hub-fake-tmux-'));
+  try {
+    const listing = path.join(dir, 'listing.tsv');
+    await writeFile(listing, `${rows.map((row) => row.join('\t')).join('\n')}\n`);
+    const bin = path.join(dir, 'tmux');
+    await writeFile(bin, `#!/bin/sh\ncat '${listing}'\n`, { mode: 0o755 });
+    return await fn(bin);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+const fakeRow = (name, { dead = 0, status = '', signal = '', pid = 4242 } = {}) => [name, dead, status, signal, 100, 100, 'claude', '/tmp', '$0', pid];
+
+async function killsDuring(fn) {
+  const original = process.kill;
+  const calls = [];
+  process.kill = (pid, signal) => {
+    calls.push([pid, signal]);
+    return true;
+  };
+  try {
+    await fn();
+  } finally {
+    process.kill = original;
+  }
+  return calls;
+}
+
+const skipFake = process.platform === 'win32' ? 'precisa de /bin/sh' : false;
+
+test('painel encerrado sem código nem sinal: o servidor tmux recebe SIGCHLD para recolher o zumbi', { skip: skipFake }, async () => {
+  await withFakeTmux([fakeRow('ia-claude-1', { dead: 1 })], async (tmux) => {
+    const sessions = new Sessions({ tmux, reapIntervalMs: 60_000 });
+    const calls = await killsDuring(async () => {
+      const [found] = await sessions.list();
+      assert.equal(found.dead, true);
+      assert.equal(found.exitStatus, null);
+      await sessions.list();
+    });
+    assert.deepEqual(calls, [[4242, 'SIGCHLD']], 'um único SIGCHLD dentro do intervalo');
+  });
+});
+
+test('SIGCHLD só é enviado quando falta o código de saída e não há sinal', { skip: skipFake }, async () => {
+  const rows = [fakeRow('ia-claude-1'), fakeRow('ia-claude-2', { dead: 1, status: 3 }), fakeRow('ia-claude-3', { dead: 1, signal: 'SIGKILL' })];
+  await withFakeTmux(rows, async (tmux) => {
+    const calls = await killsDuring(async () => {
+      const found = await new Sessions({ tmux, reapIntervalMs: 0 }).list();
+      assert.deepEqual(found.map((session) => [session.dead, session.exitStatus]), [[false, null], [true, 3], [true, null]]);
+    });
+    assert.deepEqual(calls, []);
+  });
+});
+
+test('PID de servidor inválido nunca vira alvo de kill', { skip: skipFake }, async () => {
+  for (const pid of ['', '0', '1', '-5', 'abc', '1.5']) {
+    await withFakeTmux([fakeRow('ia-claude-1', { dead: 1, pid })], async (tmux) => {
+      const calls = await killsDuring(async () => {
+        await new Sessions({ tmux, reapIntervalMs: 0 }).list();
+      });
+      assert.deepEqual(calls, [], `pid "${pid}"`);
+    });
   }
 });
 
