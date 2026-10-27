@@ -142,19 +142,20 @@ ia web
 Isso inicia o **painel de agentes** e abre o link no navegador do aparelho. O
 link tem o formato `http://127.0.0.1:7690/<token>/`. Se o navegador nao abrir
 sozinho, copie o link exibido ou use `ia web abrir`. Quando o EmbeddingGemma
-opcional estiver instalado, sua interface sobe junto em `http://127.0.0.1:8085`.
+opcional estiver instalado, sua interface sobe junto em
+`http://127.0.0.1:8085/<token>/`, com o mesmo token.
 
 | Comando | O que faz |
 | --- | --- |
 | `ia web` | Inicia o painel (e o EmbeddingGemma, se instalado) |
 | `ia web abrir` | Inicia o painel e abre o link no navegador |
-| `ia web status` | Mostra o que esta ativo; `ia web status painel` inclui o link |
+| `ia web status` | Mostra o que esta ativo; `ia web status painel` (ou `terminal`, `embedding`) inclui o link |
 | `ia web stop` | Encerra os servicos e as sessoes dos agentes, e libera o wake-lock |
-| `ia web start terminal` | Inicia so o terminal Linux com menu em `http://127.0.0.1:7680`, sem token |
+| `ia web start terminal` | Inicia so o terminal Linux com menu em `http://127.0.0.1:7680/<token>/menu/` |
 
 `start`, `stop` e `status` aceitam um alvo: `painel`, `terminal`, `embedding` ou
 `todos`; por exemplo, `ia web stop painel`. O terminal com menu so sobe quando
-pedido, porque nao tem token.
+pedido, porque da acesso a um shell completo.
 
 O comando volta assim que o painel esta no ar, e os servicos seguem em segundo
 plano ate `ia web stop`. Se o inicio passar de 180 s, o `ia web` para de esperar
@@ -182,8 +183,10 @@ modo [Pedir aprovacao](#codex-no-android). Sao ate 6 sessoes ao mesmo tempo, e o
 painel recusa novas quando a memoria livre fica abaixo de 512 MB.
 
 > [!IMPORTANT]
-> O painel escuta **somente em 127.0.0.1** e todo acesso exige o token do link.
-> Quem tiver o link controla os agentes e os terminais do painel: nao o
+> O painel, o terminal com menu e o EmbeddingGemma escutam **somente em
+> 127.0.0.1** e todo acesso exige o token do link. O token importa porque, no
+> Android, **outros apps instalados no aparelho tambem alcancam 127.0.0.1**.
+> Quem tiver o link controla os agentes e os terminais: nao o
 > compartilhe nem o publique em capturas de tela. Para trocar o token, encerre o
 > painel e apague o arquivo; o proximo `ia web` gera outro.
 
@@ -214,7 +217,9 @@ ia web
 
 O painel, o terminal com menu e o EmbeddingGemma escutam **somente em
 127.0.0.1** e nao aceitam conexoes de outros aparelhos no Wi-Fi; nao altere o
-endereco de escuta para `0.0.0.0`. O instalador inclui `ttyd`, `tmux` e Node.js
+endereco de escuta para `0.0.0.0`. Os tres exigem o mesmo token; um servico de
+versao anterior que ainda rode sem token e reiniciado no proximo `ia web start`.
+O instalador inclui `ttyd`, `tmux` e Node.js
 no Linux, e `ia web` aciona `termux-wake-lock` automaticamente quando disponivel,
 evitando que o Android suspenda os servicos ao alternar para o navegador
 (`ia web stop` libera o wake-lock).
@@ -230,7 +235,10 @@ ia embeddinggemma install
 Esse comando instala Python e as dependencias opcionais (`sentence-transformers`,
 `fastapi` e `uvicorn`) no Linux. Reserve alguns GiB; a primeira inferencia baixa
 o modelo (cerca de 1,5 GiB) e pode levar mais tempo. Busca de arquivos fica
-restrita a pasta atual de onde `ia web` foi iniciado.
+restrita a pasta atual de onde `ia web` foi iniciado. Programas que usam o
+endpoint compativel com OpenAI (`http://127.0.0.1:8085/v1/embeddings`) devem
+enviar `Authorization: Bearer <token>`; o token fica em
+`~/.local/share/termux-ai/web/token`, dentro do Linux.
 
 ## Primeiro uso
 
@@ -802,9 +810,9 @@ cada comando ou edicao.
 Digite chaves somente no prompt oficial do agente. Nao publique credenciais,
 logs privados ou backups. No OpenCode, as credenciais ficam em
 `~/.local/share/opencode/auth.json`, dentro do Linux em que ele roda.
-O terminal web com menu (`ia web start terminal`, sem token) e as sessoes do
+O terminal web com menu (`ia web start terminal`) e as sessoes do
 painel concedem ao usuario da sessao os mesmos acessos que um shell Linux local;
-mantenha-os em `127.0.0.1`, trate o link do painel como uma senha e encerre tudo
+mantenha-os em `127.0.0.1`, trate os links com token como uma senha e encerre tudo
 com `ia web stop` ao terminar (isso tambem encerra as sessoes dos agentes do
 painel).
 

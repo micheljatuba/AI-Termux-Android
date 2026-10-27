@@ -65,6 +65,13 @@ can be forged by collaborators with write access, so review `git diff` before
 running anything; it has not been validated on Android/PRoot yet. Details in
 [SECURITY.md](SECURITY.md).
 
+## Browser panel
+
+`ia web` starts a local multi-agent panel in the phone's browser. The panel, the
+optional menu terminal and the optional EmbeddingGemma server listen only on
+`127.0.0.1` **and require a private token**, because other apps on the same
+Android device can also reach `127.0.0.1`. Treat the links as passwords.
+
 ## Compatibility and security
 
 Tested on Android without root. PRoot is **not** a security sandbox: agents can

@@ -77,6 +77,25 @@ Limites que voce precisa conhecer:
   remotos exigem `--allow-unverified-remote`, por sua conta e risco.
 - Ainda nao foi validado em Android/PRoot.
 
+## Servicos locais no navegador (`ia web`)
+
+O painel (porta 7690), o terminal com menu (7680) e o EmbeddingGemma (8085)
+escutam somente em `127.0.0.1`. Isso impede o acesso de outros aparelhos, mas
+**nao de outros apps do mesmo Android**: qualquer app com permissao de internet
+alcanca `127.0.0.1`. Por isso:
+
+- os tres servicos exigem o mesmo token privado (`~/.local/share/termux-ai/web/token`,
+  arquivo 600 em pasta 700): no caminho do link ou, no endpoint compativel com
+  OpenAI, em `Authorization: Bearer <token>`. Sem token a resposta e 404;
+- o painel confere `Host` e `Origin`, e o EmbeddingGemma confere `Host`, contra
+  DNS rebinding; requisicoes com corpo que nao seja JSON sao recusadas;
+- um servico de versao anterior que ainda rode sem token e encerrado e reiniciado
+  com token no proximo `ia web start`.
+
+Quem tiver o link com token controla os agentes e os terminais: trate-o como uma
+senha. O historico do navegador guarda o link; para trocar o token, siga a secao
+"Acesso pelo navegador" do README.
+
 ## Limitacoes conhecidas da instalacao
 
 Descritas aqui para que voce possa decidir com informacao completa:
@@ -90,6 +109,11 @@ Descritas aqui para que voce possa decidir com informacao completa:
   manifesto e conferido com o binario. Manifesto e pacote vem da mesma origem:
   isso protege contra corrupcao e desvio de dominio, **nao** contra o
   comprometimento da propria origem.
+- **Hermes Agent (opcional):** instalado pelo script oficial
+  `https://hermes-agent.nousresearch.com/install.sh`, por HTTPS e sem verificacao
+  de hash, como o do Claude Code.
+- **EmbeddingGemma (opcional):** `sentence-transformers`, `fastapi` e `uvicorn`
+  sao instalados pelo pip sem versao fixa nem hash.
 - **Pacotes npm** (Codex, Copilot, OpenCode) usam versao fixa e a verificacao de
   integridade do registro npm, sem lockfile proprio.
 - **Imagem base:** `node:24-bookworm-slim` e referenciada por tag, nao por

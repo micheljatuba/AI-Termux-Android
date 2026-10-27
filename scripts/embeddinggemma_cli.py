@@ -321,15 +321,19 @@ def cmd_serve(args):
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import uvicorn
     import embeddinggemma_web
+    from embeddinggemma_auth import DEFAULT_TOKEN_FILE, ensure_token
 
+    token = ensure_token(DEFAULT_TOKEN_FILE)
     if args.dim in VALID_DIMS:
         embeddinggemma_web.DEFAULT_DIM = args.dim
     embeddinggemma_web.get_model()
 
     print(f"\nIniciando servidor EmbeddingGemma 2 na porta {args.port}...")
+    print(f"Interface: http://{args.host}:{args.port}/{token}/  (o link tem um token: trate-o como uma senha)")
     print(f"Endpoint compatível com OpenAI: http://{args.host}:{args.port}/v1/embeddings")
+    print(f"  envie o cabeçalho Authorization: Bearer <token>; o token fica em {DEFAULT_TOKEN_FILE}")
     print("Pressione Ctrl+C para encerrar.\n")
-    uvicorn.run(embeddinggemma_web.app, host=args.host, port=args.port, log_level="info")
+    uvicorn.run(embeddinggemma_web.protected_app(token), host=args.host, port=args.port, log_level="info")
 
 def interactive_menu():
     while True:

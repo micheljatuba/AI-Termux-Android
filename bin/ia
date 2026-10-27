@@ -689,16 +689,12 @@ manage_web() {
         stop) (( status != 0 )) || update_web_wake_lock stop "$target" "$web_log" ;;
     esac
     if (( status == 0 )) && [[ $stage_action == start ]]; then
-        if grep -Eq '^terminal (iniciado em|ja esta ativo)' "$web_log"; then
-            printf '%s\n' 'Terminal: http://127.0.0.1:7680'
-        fi
-        if grep -Eq '^embedding (iniciado em|ja esta ativo)' "$web_log"; then
-            printf '%s\n' 'EmbeddingGemma: http://127.0.0.1:8085'
-        fi
         printf '%s\n' 'Acesso restrito a este aparelho (127.0.0.1). Para encerrar: ia web stop'
+        if grep -Eq '^(Painel|Terminal|EmbeddingGemma): http://127\.0\.0\.1:[0-9]+/[0-9a-f]{32}/' "$web_log"; then
+            printf '%s\n' 'Os links tem um token de acesso: trate-os como uma senha.'
+        fi
         panel_line="$(grep -Eo '^Painel: http://127\.0\.0\.1:7690/[0-9a-f]{32}/$' "$web_log" | head -n 1)" || true
         if [[ -n $panel_line ]]; then
-            printf '%s\n' 'O link do painel tem um token de acesso: trate-o como uma senha.'
             if [[ $action == abrir || ( -t 1 && ${TERMUX_AI_NO_OPEN:-} != 1 ) ]]; then
                 open_panel "${panel_line#Painel: }"
             fi

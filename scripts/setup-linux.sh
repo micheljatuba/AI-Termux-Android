@@ -667,6 +667,7 @@ case "$stage" in
         done
         install -m 644 "$source_dir/scripts/embeddinggemma_web.py" "$HOME/.local/share/termux-ai/tools/embeddinggemma_web.py"
         install -m 644 "$source_dir/scripts/embeddinggemma_cli.py" "$HOME/.local/share/termux-ai/tools/embeddinggemma_cli.py"
+        install -m 644 "$source_dir/scripts/embeddinggemma_auth.py" "$HOME/.local/share/termux-ai/tools/embeddinggemma_auth.py"
         install -m 755 "$source_dir/scripts/handoff.sh" "$HOME/.local/bin/ia-handoff"
         if [[ ! -e "$HOME/.local/bin/embeddinggemma" && ! -L "$HOME/.local/bin/embeddinggemma" ]]; then
             install -m 755 "$source_dir/scripts/embeddinggemma-launcher.sh" "$HOME/.local/bin/embeddinggemma"

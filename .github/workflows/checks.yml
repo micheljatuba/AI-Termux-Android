@@ -19,11 +19,18 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck tmux ttyd
       - name: Check shell scripts
         run: shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/add-opencode-ubuntu.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma-launcher.sh scripts/hub/attach.sh scripts/handoff.sh tests/run.sh tests/handoff.sh
+      - name: Install FastAPI for the EmbeddingGemma web test
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install fastapi==0.162.0 httpx==0.28.1
+          echo "$RUNNER_TEMP/venv/bin" >> "$GITHUB_PATH"
       - name: Check Python scripts
-        run: python3 -m py_compile scripts/embeddinggemma_cli.py scripts/embeddinggemma_web.py
+        run: python3 -m py_compile scripts/embeddinggemma_cli.py scripts/embeddinggemma_web.py scripts/embeddinggemma_auth.py tests/embedding_auth_test.py tests/embedding_web_test.py
       - name: Check Node scripts
         run: for file in scripts/hub/*.mjs; do node --check "$file"; done
       - name: Run hub tests
         run: node --test tests/hub/*.test.mjs
       - name: Run offline tests
+        env:
+          TERMUX_AI_REQUIRE_WEB_TEST: '1'
         run: bash tests/run.sh
