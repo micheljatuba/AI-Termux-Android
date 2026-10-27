@@ -12,6 +12,8 @@ show_help() {
         '     ia atualizar [--yes] [agente...]' \
         '     ia diagnostico' \
         '     ia orquestrar <modo> [opcoes] [tarefa]' \
+        '     ia decidir [tarefa]' \
+        '     ia typesafe [status|configurar|testar|ativar|desativar|esquecer]' \
         '     ia web [start|stop|status|abrir] [painel|terminal|embedding|todos]' \
         '     ia embeddinggemma install' \
         'Sem argumentos, abre o menu em uma sessao interativa.' \
@@ -19,6 +21,7 @@ show_help() {
         'atualizar: mostra o plano e atualiza os agentes apos confirmacao.' \
         'diagnostico: verifica Linux, agentes, logins e protecoes.' \
         'orquestrar: junta varios agentes (comparar, pipeline ou maestro), so leitura; veja ia orquestrar --ajuda.' \
+        'decidir: o TypeSafe Jev avalia risco e clareza e sugere agente e modo; com ia typesafe configurar, vira a frente de toda orquestracao.' \
         'web: abre no navegador o painel com varios agentes ao vivo, so em 127.0.0.1; o link tem um token.' \
         '     O EmbeddingGemma 2 sobe junto se estiver instalado; o terminal com menu so sobe se pedido.' \
         'Codex: sem sandbox no Android/PRoot; abre no modo Pedir aprovacao.' \
@@ -765,6 +768,10 @@ if [[ "$launcher_name" == ia ]]; then
         exit "$status"
     elif [[ "$1" == orquestrar ]]; then
         shift
+        status=0
+        run_orchestrate "$@" || status=$?
+        exit "$status"
+    elif [[ "$1" == decidir || "$1" == typesafe ]]; then
         status=0
         run_orchestrate "$@" || status=$?
         exit "$status"

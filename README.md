@@ -11,7 +11,7 @@ GitHub Copilot &middot; Claude Code &middot; Codex &middot; Antigravity &middot;
 ![Arquiteturas de 64 bits](https://img.shields.io/badge/64_bits-ARM64_%7C_x86__64-0969DA)
 [![Testado no Android](https://img.shields.io/badge/Testado-no_Android-198754)](#compatibilidade)
 
-[Instalar](#instalacao) &middot; [Primeiro uso](#primeiro-uso) &middot; [Na tela](#na-tela) &middot; [Painel](#acesso-pelo-navegador) &middot; [Orquestrar](#orquestracao-de-agentes) &middot; [Hermes](#hermes-agent-opcional) &middot; [Continuar em outro aparelho](#continuar-em-outro-aparelho) &middot; [Atualizar](#atualizar) &middot; [Diagnostico](#diagnostico) &middot; [Compatibilidade](#compatibilidade) &middot; [Ajuda](#ajuda) &middot; [English](README.en.md)
+[Instalar](#instalacao) &middot; [Primeiro uso](#primeiro-uso) &middot; [Na tela](#na-tela) &middot; [Painel](#acesso-pelo-navegador) &middot; [Orquestrar](#orquestracao-de-agentes) &middot; [TypeSafe](#frente-de-decisao-com-typesafe-jev-opcional) &middot; [Hermes](#hermes-agent-opcional) &middot; [Continuar em outro aparelho](#continuar-em-outro-aparelho) &middot; [Atualizar](#atualizar) &middot; [Diagnostico](#diagnostico) &middot; [Compatibilidade](#compatibilidade) &middot; [Ajuda](#ajuda) &middot; [English](README.en.md)
 
 </div>
 
@@ -435,6 +435,41 @@ O progresso e o resultado de cada etapa tambem aparecem no painel, na aba
 **Orquestrar**, com o historico na aba **Historico**.
 
 </details>
+
+## Frente de decisao com TypeSafe Jev (opcional)
+
+> [!NOTE]
+> **Experimental.** O cliente segue o SDK oficial `@typesafe-ai/sdk` e foi
+> testado contra um servidor simulado; a chamada a API real ainda precisa ser
+> validada no aparelho.
+
+Com o [TypeSafe Jev](https://console.typesafe.ai) ativado, toda orquestracao
+(`ia orquestrar` e o painel) passa antes por uma decisao rapida:
+
+| O Jev avalia | O que acontece |
+| --- | --- |
+| **Risco** | Tarefa perigosa (roubo de credenciais, malware, ataque) e **bloqueada**, sem atalho para ignorar. Tarefa que pode apagar dados, publicar ou mexer em contas **pede confirmacao**. |
+| **Clareza** | Tarefa vaga para e pede mais detalhes antes de gastar os agentes. |
+| **Roteamento** | Sugere o agente (inclusive o Hermes) e o modo: direto, comparar, pipeline ou maestro. A escolha final e sua. |
+
+Se o Jev estiver indisponivel (sem internet, sem chave, fora do ar), nada segue
+sem a sua confirmacao: no terminal ele pergunta; sem terminal, repita com
+`--sem-jev`. Um bloqueio nunca e ignorado.
+
+```sh
+ia typesafe configurar      # cole a chave criada em console.typesafe.ai (nao aparece na tela)
+ia typesafe testar          # confere chave e conexao, sem enviar dados do projeto
+ia decidir "Adicionar cache ao cliente HTTP"   # so a decisao, sem executar agentes
+ia typesafe desativar       # volta ao comportamento sem o Jev
+```
+
+**O que sai do aparelho:** o texto da tarefa e os **nomes** de ate 300 arquivos
+da pasta, nunca o conteudo. Pastas ocultas, `node_modules` e nomes de
+credenciais (`.env`, chaves, `auth.json`) ficam de fora. Se a tarefa ou um nome
+de arquivo parecer conter um segredo, nada e enviado. A chave fica em arquivo
+privado no Linux (`~/.local/share/termux-ai/typesafe/key`) ou na variavel
+`TYPESAFE_API_KEY`; o registro local de decisoes guarda so um resumo, sem o
+texto da tarefa.
 
 ## Hermes Agent (opcional)
 

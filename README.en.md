@@ -72,6 +72,15 @@ optional menu terminal and the optional EmbeddingGemma server listen only on
 `127.0.0.1` **and require a private token**, because other apps on the same
 Android device can also reach `127.0.0.1`. Treat the links as passwords.
 
+## Decision front with TypeSafe Jev (optional, experimental)
+
+`ia typesafe configurar` turns on a decision step before every orchestration:
+TypeSafe Jev rates the risk (dangerous tasks are **blocked**, risky ones need
+confirmation), checks that the task is clear, and suggests the agent (Hermes
+included) and the mode. Only the task text and up to 300 file **names** leave
+the device, never file contents; tasks containing known secrets are never sent.
+If Jev is unreachable, nothing runs without your explicit confirmation.
+
 ## Compatibility and security
 
 Tested on Android without root. PRoot is **not** a security sandbox: agents can

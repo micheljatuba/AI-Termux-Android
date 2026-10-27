@@ -74,7 +74,7 @@ function fakeSessions() {
   };
 }
 
-async function setup({ ttydPort = 1, runAgent } = {}) {
+async function setup({ ttydPort = 1, runAgent, gate } = {}) {
   const base = await realpath(await mkdtemp(path.join(os.tmpdir(), 'hub-srv-')));
   const root = path.join(base, 'projetos');
   await mkdir(path.join(root, 'app', 'src'), { recursive: true });
@@ -106,6 +106,7 @@ async function setup({ ttydPort = 1, runAgent } = {}) {
     now: () => NOW,
     memInfo: async () => ({ totalMb: 4000, availableMb: 3000 }),
     ttydPort,
+    ...(gate ? { gate } : {}),
   });
   await new Promise((resolve) => hub.server.listen(0, '127.0.0.1', resolve));
   const port = hub.server.address().port;
@@ -715,5 +716,57 @@ test('close() encerra mesmo com terminais conectados', async () => {
   } finally {
     await rm(env.base, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     await ttyd.close();
+  }
+});
+
+test('frente de decisao (Jev) no servidor: bloqueio recusa, confirmacao exige confirmed=true', async () => {
+  const seen = [];
+  let answer = { status: 'disabled' };
+  const env = await setup({
+    gate: async (request) => {
+      seen.push(request);
+      return answer;
+    },
+  });
+  const spec = { mode: 'compare', prompt: 'Explique o projeto', dir: 'app', agents: ['claude', 'copilot'] };
+  const decided = (verdict) => ({
+    status: 'decided',
+    decision: {
+      verdict,
+      reasons: verdict === 'allow' ? [] : ['motivo de teste'],
+      safety: {},
+      clear: 0.9,
+      route: { mode: 'compare', modeConfidence: 0.8, agent: 'claude', agentConfidence: 0.7 },
+      model: 'jev-test',
+    },
+  });
+  try {
+    assert.equal((await env.api('POST', '/api/runs', { body: spec })).status, 202, 'desligado: segue como antes');
+    assert.equal(seen.at(-1).task, 'Explique o projeto');
+    assert.equal(seen.at(-1).dir, path.join(env.root, 'app'));
+    assert.ok(Array.isArray(seen.at(-1).agents), 'o servidor informa os agentes disponiveis');
+
+    answer = decided('block');
+    const blocked = await env.api('POST', '/api/runs', { body: { ...spec, confirmed: true } });
+    assert.equal(blocked.status, 403, 'bloqueio nao aceita confirmacao');
+    assert.equal(blocked.json.jev, 'blocked');
+    answer = { status: 'secret', secrets: ['token GitHub'] };
+    assert.equal((await env.api('POST', '/api/runs', { body: { ...spec, confirmed: true } })).status, 403, 'segredo nunca segue');
+
+    for (const pending of [decided('confirm'), decided('unclear'), { status: 'unavailable', reason: 'Sem conexao com o TypeSafe' }]) {
+      answer = pending;
+      const asked = await env.api('POST', '/api/runs', { body: spec });
+      assert.equal(asked.status, 409);
+      assert.equal(asked.json.jev, 'confirm');
+      assert.match(asked.json.error, /Jev/);
+      assert.equal((await env.api('POST', '/api/runs', { body: { ...spec, confirmed: 'true' } })).status, 409, 'so o booleano true confirma');
+      const confirmed = await env.api('POST', '/api/runs', { body: { ...spec, confirmed: true } });
+      assert.equal(confirmed.status, 202);
+      assert.equal(confirmed.json.confirmed, undefined, 'a confirmacao nao entra na execucao');
+    }
+    answer = decided('allow');
+    assert.equal((await env.api('POST', '/api/runs', { body: spec })).status, 202);
+  } finally {
+    await env.cleanup();
   }
 });

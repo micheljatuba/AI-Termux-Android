@@ -2,9 +2,11 @@
 import { stat } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { createInterface } from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import { describeAgents, getAgent } from './agents.mjs';
+import { checkJev, describeGate, forgetJevKey, gateTask, loadJevConfig, saveJevConfig, saveJevKey } from './jev.mjs';
 import { Orchestrator } from './orchestrator.mjs';
 import { HubError, clampInt } from './util.mjs';
 
@@ -46,6 +48,14 @@ Outros comandos:
   agentes      Lista os agentes e o que cada um consegue fazer
   historico    Lista as últimas execuções
   ver ID       Mostra o resultado de uma execução (--tudo mostra cada etapa)
+  decidir      Pergunta ao TypeSafe Jev o risco, a clareza e o melhor agente/modo
+  typesafe     status | configurar | testar | ativar | desativar | esquecer
+
+Frente de decisão (TypeSafe Jev, opcional): com "ia typesafe configurar", toda
+orquestração passa antes pelo Jev. Bloqueio para a tarefa; confirmação, tarefa
+pouco clara ou Jev indisponível param e perguntam. Só o texto da tarefa e os
+NOMES dos arquivos da pasta vão ao TypeSafe (nunca o conteúdo); segredos na
+tarefa impedem o envio.
 
 Opções:
   -a, --agentes LISTA       Agentes separados por vírgula (comparar e maestro)
@@ -55,6 +65,8 @@ Opções:
   -n, --max-tarefas N       Máximo de subtarefas do maestro (1 a 6, padrão 4)
   -d, --pasta DIR           Pasta de trabalho (padrão: a pasta atual)
   -t, --tempo SEGUNDOS      Tempo limite por etapa (30 a 1800, padrão 600)
+      --confirmar           Segue quando o Jev pede confirmação ou mais detalhes
+      --sem-jev             Segue quando o Jev está indisponível (nunca ignora um bloqueio)
       --json                Imprime a execução completa em JSON
       --tudo                Com "ver": inclui a saída de cada etapa
   -h, --ajuda               Mostra esta ajuda
@@ -77,6 +89,8 @@ const OPTIONS = {
   tempo: { type: 'string', short: 't' },
   json: { type: 'boolean' },
   tudo: { type: 'boolean' },
+  confirmar: { type: 'boolean' },
+  'sem-jev': { type: 'boolean' },
   ajuda: { type: 'boolean', short: 'h' },
   help: { type: 'boolean' },
 };
@@ -85,6 +99,50 @@ async function readStdin() {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);
   return Buffer.concat(chunks).toString('utf8');
+}
+
+async function askYesNo(question) {
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    return /^(s|sim|y|yes)$/i.test((await rl.question(`${question} [s/N] `)).trim());
+  } finally {
+    rl.close();
+  }
+}
+
+// Le a chave sem eco no terminal; pela entrada padrao quando nao ha terminal.
+async function readSecretInput({ stdinIsTTY }) {
+  if (!stdinIsTTY || typeof process.stdin.setRawMode !== 'function') return (await readStdin()).trim();
+  process.stderr.write('Cole a chave de API do TypeSafe (ela nao aparece na tela) e tecle Enter: ');
+  const stdin = process.stdin;
+  return new Promise((resolve, reject) => {
+    let value = '';
+    const cleanup = () => {
+      stdin.off('data', onData);
+      stdin.setRawMode(false);
+      stdin.pause();
+      process.stderr.write('\n');
+    };
+    const onData = (chunk) => {
+      for (const char of chunk) {
+        if (char === '\r' || char === '\n') {
+          cleanup();
+          resolve(value.trim());
+          return;
+        }
+        if (char === '\u0003') {
+          cleanup();
+          reject(new HubError(400, 'Cancelado'));
+          return;
+        }
+        value = char === '\u007f' || char === '\b' ? value.slice(0, -1) : value + char;
+      }
+    };
+    stdin.setRawMode(true);
+    stdin.setEncoding('utf8');
+    stdin.on('data', onData);
+    stdin.resume();
+  });
 }
 
 const pad = (value, width) => String(value).padEnd(width);
@@ -144,6 +202,80 @@ async function findRun(orchestrator, query) {
   return orchestrator.get((exact ?? matches[0]).id);
 }
 
+// Frente de decisao: true quando a tarefa pode seguir para os agentes.
+async function passGate({ gate, values, canAsk, ask, warn }) {
+  const result = await gate();
+  if (result.status === 'disabled') return true;
+  warn(describeGate(result));
+  if (result.status === 'secret') return false;
+  if (result.status === 'unavailable') {
+    if (values['sem-jev']) {
+      warn('Seguindo sem a decisão do Jev, a pedido (--sem-jev).');
+      return true;
+    }
+    if (canAsk) return ask('Seguir sem a decisão do Jev?');
+    warn('Parado. Para seguir sem o Jev, repita com --sem-jev.');
+    return false;
+  }
+  const { verdict } = result.decision;
+  if (verdict === 'allow') return true;
+  if (verdict === 'block') {
+    warn('Nada foi executado. Reformule a tarefa: o bloqueio do Jev não tem atalho para ignorar.');
+    return false;
+  }
+  if (values.confirmar) return true;
+  if (canAsk) return ask('Seguir mesmo assim?');
+  warn('Parado. Para seguir, repita com --confirmar.');
+  return false;
+}
+
+async function typesafeCommand(action = 'status', { state, env, say, warn, readSecret, stdinIsTTY, fetchImpl }) {
+  if (action === 'status') {
+    const config = await loadJevConfig({ state, env });
+    say(`TypeSafe Jev: ${config.enabled ? 'ativo (toda orquestração passa antes pelo Jev)' : 'desativado'}`);
+    say(`Chave: ${{ arquivo: 'salva em arquivo privado', ambiente: 'da variável TYPESAFE_API_KEY', invalida: 'inválida', ausente: 'não configurada' }[config.keySource]}`);
+    say(`Modelo: ${config.model}`);
+    if (!config.key) say('Crie uma chave em https://console.typesafe.ai e execute: ia typesafe configurar');
+    return 0;
+  }
+  if (action === 'configurar') {
+    await saveJevKey(state, await readSecret({ stdinIsTTY }));
+    await saveJevConfig(state, { enabled: true });
+    say('Chave salva em arquivo privado e frente de decisão ativada.');
+    say('Confira a conexão com: ia typesafe testar');
+    return 0;
+  }
+  if (action === 'ativar') {
+    if (!(await loadJevConfig({ state, env })).key) throw new HubError(400, 'Configure a chave antes: ia typesafe configurar');
+    await saveJevConfig(state, { enabled: true });
+    say('Frente de decisão ativada.');
+    return 0;
+  }
+  if (action === 'desativar') {
+    await saveJevConfig(state, { enabled: false });
+    say('Frente de decisão desativada: as orquestrações seguem sem o Jev.');
+    return 0;
+  }
+  if (action === 'esquecer') {
+    await forgetJevKey(state);
+    await saveJevConfig(state, { enabled: false });
+    say('Chave apagada e frente de decisão desativada.');
+    return 0;
+  }
+  if (action === 'testar') {
+    try {
+      const { models } = await checkJev(await loadJevConfig({ state, env }), { fetchImpl });
+      say(`Conexão com o TypeSafe ok${models.length ? `; modelos: ${models.join(', ')}` : ''}.`);
+      return 0;
+    } catch (error) {
+      warn(`Erro: ${error.message}`);
+      return 4;
+    }
+  }
+  warn('Uso: ia typesafe status | configurar | testar | ativar | desativar | esquecer');
+  return 2;
+}
+
 export async function run(
   argv,
   {
@@ -156,6 +288,10 @@ export async function run(
     orchestrator = null,
     describe = describeAgents,
     signals = process,
+    gate = gateTask,
+    ask = askYesNo,
+    readSecret = readSecretInput,
+    fetchImpl = fetch,
   } = {},
 ) {
   const say = (text = '') => out.write(`${text}\n`);
@@ -177,6 +313,14 @@ export async function run(
   }
 
   const state = env.TERMUX_AI_HUB_STATE || path.join(os.homedir(), '.local', 'share', 'termux-ai');
+  if (command === 'typesafe') {
+    try {
+      return await typesafeCommand(rest[0], { state, env, say, warn, readSecret, stdinIsTTY, fetchImpl });
+    } catch (error) {
+      warn(`Erro: ${error.message}`);
+      return 2;
+    }
+  }
   const orch =
     orchestrator ??
     new Orchestrator({
@@ -232,7 +376,7 @@ export async function run(
       return found.status === 'done' ? 0 : 1;
     }
 
-    const mode = MODE_ALIASES[command];
+    const mode = command === 'decidir' ? 'decide' : MODE_ALIASES[command];
     if (!mode) {
       warn(`Comando desconhecido: ${command}`);
       warn('Use comparar, pipeline, maestro, agentes, historico ou ver. Veja "ia orquestrar --ajuda".');
@@ -240,8 +384,14 @@ export async function run(
     }
 
     let prompt = rest.join(' ').trim();
-    if (rest.length === 1 && rest[0] === '-') prompt = (await readInput()).trim();
-    else if (rest.length === 0 && !stdinIsTTY) prompt = (await readInput()).trim();
+    let fromStdin = false;
+    if (rest.length === 1 && rest[0] === '-') {
+      prompt = (await readInput()).trim();
+      fromStdin = true;
+    } else if (rest.length === 0 && !stdinIsTTY) {
+      prompt = (await readInput()).trim();
+      fromStdin = true;
+    }
     if (!prompt) {
       warn('Erro: informe a tarefa (argumentos ou entrada padrão com "-").');
       return 2;
@@ -252,6 +402,33 @@ export async function run(
       warn(`Erro: pasta não encontrada: ${dir}`);
       return 2;
     }
+
+    const installedIds = installed.filter((agent) => agent.installed && agent.orchestrable).map((agent) => agent.id);
+    if (mode === 'decide') {
+      const result = await gate({ task: prompt, dir, agents: installedIds, state, env, fetchImpl, force: true });
+      say(describeGate(result));
+      if (result.status === 'decided') {
+        const { route, verdict } = result.decision;
+        if (verdict !== 'block') {
+          say(
+            route.mode === 'direct'
+              ? `Para seguir: ia ${route.agent ?? 'claude'}`
+              : `Para seguir: ia orquestrar ${MODE_NAMES[route.mode]}${route.agent ? ` -a ${route.agent}` : ''} "<tarefa>"`,
+          );
+        }
+        return { allow: 0, confirm: 1, unclear: 1, block: 3 }[verdict];
+      }
+      return result.status === 'secret' ? 3 : 4;
+    }
+
+    const allowed = await passGate({
+      gate: () => gate({ task: prompt, dir, agents: installedIds, state, env, fetchImpl }),
+      values,
+      canAsk: stdinIsTTY && !fromStdin,
+      ask,
+      warn,
+    });
+    if (!allowed) return 3;
 
     const defaults = readableAgents(installed);
     if (defaults.length === 0 && !values.agentes && !values.etapas) {

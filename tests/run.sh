@@ -262,6 +262,14 @@ assert_equal "$launch_status" 127 'a missing handoff ends with the command-not-f
 grep -Fq 'bash install.sh' "$test_root/handoff-missing.log"
 printf '%s\n' 'PASS handoff dispatch and update hint'
 
+for decision_command in decidir typesafe; do
+    bash "$project_root/bin/ia" "$decision_command" 'two words'
+    mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+    assert_equal "${actual_args[11]}" "$decision_command" "routes ia $decision_command to the panel CLI in the guest"
+    assert_equal "${actual_args[12]}" 'two words' "keeps the ia $decision_command argument"
+done
+printf '%s\n' 'PASS TypeSafe decision commands run inside the Linux guest'
+
 bash "$project_root/bin/ia" orquestrar comparar --agentes claude,copilot 'two words'
 mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
 assert_equal "${actual_args[2]}" --user 'runs the orchestrator as the dedicated user'
@@ -466,7 +474,7 @@ cmp "$assets_home/.local/bin/embeddinggemma" "$project_root/scripts/embeddinggem
 cmp "$assets_home/.local/bin/ia-handoff" "$project_root/scripts/handoff.sh"
 test -x "$assets_home/.local/bin/ia-handoff" || fail_test 'the handoff command is not executable in the guest'
 assert_equal "$(readlink "$assets_home/.local/bin/embedding")" embeddinggemma 'installs the guest compatibility link'
-for hub_file in util.mjs agents.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
+for hub_file in util.mjs agents.mjs jev.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
     cmp "$assets_home/.local/share/termux-ai/hub/$hub_file" "$project_root/scripts/hub/$hub_file"
 done
 printf '%s\n' 'PASS Linux guest assets and optional command installation'
@@ -1277,7 +1285,7 @@ expect_incomplete_download() {
     test ! -e "$TERMUX_AI_TEST_INSTALL_LOG"
     test ! -e "$HOME/.local"
 }
-for hub_file in util.mjs agents.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
+for hub_file in util.mjs agents.mjs jev.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
     held_file="$test_root/held-hub-file"
     mv "$download_copy/scripts/hub/$hub_file" "$held_file"
     expect_incomplete_download "the installer accepted a download without scripts/hub/$hub_file" 'Baixe o repositorio completo'
@@ -2406,7 +2414,7 @@ for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash 
         exit 1
     fi
 done
-for relative_path in scripts/hub/util.mjs scripts/hub/agents.mjs scripts/hub/orchestrator.mjs scripts/hub/sessions.mjs scripts/hub/server.mjs scripts/hub/cli.mjs scripts/hub/index.html scripts/hub/tmux.conf; do
+for relative_path in scripts/hub/util.mjs scripts/hub/agents.mjs scripts/hub/jev.mjs scripts/hub/orchestrator.mjs scripts/hub/sessions.mjs scripts/hub/server.mjs scripts/hub/cli.mjs scripts/hub/index.html scripts/hub/tmux.conf; do
     if LC_ALL=C grep -q $'\r' "$project_root/$relative_path"; then
         printf 'FAIL: CRLF in %s\n' "$relative_path" >&2
         exit 1

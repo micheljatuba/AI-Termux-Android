@@ -89,7 +89,7 @@ container_dir="$distro_dir/containers/termux-ai"
 legacy_dir="$distro_dir/installed-rootfs/termux-ai"
 owner_id='termux-ai-installer-v1'
 tool_names=(ia codex copilot claude antigravity agy opencode embeddinggemma embedding)
-hub_files=(util.mjs agents.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf)
+hub_files=(util.mjs agents.mjs jev.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf)
 linux_name=termux-ai
 linux_user=node
 if [[ -e "$state_dir" || -L "$state_dir" ]]; then
