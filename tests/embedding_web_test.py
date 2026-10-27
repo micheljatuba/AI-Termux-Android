@@ -8,12 +8,13 @@ import sys
 from pathlib import Path
 
 try:
+    import uvicorn  # noqa: F401  (o servidor importa uvicorn)
     from fastapi.testclient import TestClient
 except ImportError:
     if os.environ.get("TERMUX_AI_REQUIRE_WEB_TEST") == "1":
-        print("FAIL: fastapi/httpx are required for the EmbeddingGemma web test", file=sys.stderr)
+        print("FAIL: fastapi, httpx and uvicorn are required for the EmbeddingGemma web test", file=sys.stderr)
         sys.exit(1)
-    print("SKIP EmbeddingGemma web routes: fastapi/httpx not installed")
+    print("SKIP EmbeddingGemma web routes: fastapi, httpx or uvicorn not installed")
     sys.exit(0)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
