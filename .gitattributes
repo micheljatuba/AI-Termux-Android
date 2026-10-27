@@ -1,6 +1,11 @@
 * text=auto
 *.sh text eol=lf
 *.bash text eol=lf
+*.py text eol=lf
 /bin/ia text eol=lf
 *.md text eol=lf
 *.yml text eol=lf
+*.mjs text eol=lf
+*.html text eol=lf
+*.conf text eol=lf
+*.json text eol=lf

@@ -1,14 +1,723 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+state_dir="$HOME/.local/share/termux-ai"
+version_pattern='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+safe_text_pattern='^[A-Za-z0-9 ._()/+:-]{1,60}$'
+
 show_help() {
     printf '%s\n' \
-    'Uso: ia [copilot|claude|codex|antigravity|agy|opencode|terminal] [argumentos]' \
+        'Uso: ia [copilot|claude|codex|antigravity|agy|opencode|hermes|embeddinggemma|terminal] [argumentos]' \
+        '     ia versoes' \
+        '     ia atualizar [--yes] [agente...]' \
+        '     ia diagnostico' \
+        '     ia orquestrar <modo> [opcoes] [tarefa]' \
+        '     ia web [start|stop|status|abrir] [painel|terminal|embedding|todos]' \
+        '     ia embeddinggemma install' \
         'Sem argumentos, abre o menu em uma sessao interativa.' \
-    'Handoff (experimental): ia handoff envia o trabalho para um branch privado; ia continuar o retoma em outro aparelho.' \
-    'Codex: execucao no sandbox nao validada para Android/PRoot.' \
-    'Antigravity CLI: comandos antigravity ou agy.' \
-    'OpenCode: integracao experimental, sem validacao em Android/PRoot.'
+        'versoes: compara as versoes instaladas com as mais recentes.' \
+        'atualizar: mostra o plano e atualiza os agentes apos confirmacao.' \
+        'diagnostico: verifica Linux, agentes, logins e protecoes.' \
+        'orquestrar: junta varios agentes (comparar, pipeline ou maestro), so leitura; veja ia orquestrar --ajuda.' \
+        'web: abre no navegador o painel com varios agentes ao vivo, so em 127.0.0.1; o link tem um token.' \
+        '     O EmbeddingGemma 2 sobe junto se estiver instalado; o terminal com menu so sobe se pedido.' \
+        'Codex: sem sandbox no Android/PRoot; abre no modo Pedir aprovacao.' \
+        '       Para escolher outro modo, informe -s/--sandbox ou -a/--ask-for-approval.' \
+        'Antigravity CLI: comandos antigravity ou agy.' \
+        'OpenCode: integracao experimental, sem validacao em Android/PRoot.' \
+        'Hermes Agent: opcional (cerca de 2 GB); instale com ia atualizar hermes e configure com ia hermes setup.' \
+        'EmbeddingGemma 2: embeddings locais e opcionais via embeddinggemma ou embedding.' \
+        'Handoff (experimental): ia handoff envia o trabalho para um branch privado; ia continuar o retoma em outro aparelho.'
+}
+
+display_name() {
+    case "$1" in
+        copilot) printf '%s' 'GitHub Copilot' ;;
+        claude) printf '%s' 'Claude Code' ;;
+        codex) printf '%s' 'Codex' ;;
+        agy) printf '%s' 'Antigravity CLI' ;;
+        opencode) printf '%s' 'OpenCode' ;;
+        hermes) printf '%s' 'Hermes Agent' ;;
+        embeddinggemma|embedding) printf '%s' 'EmbeddingGemma 2' ;;
+    esac
+}
+
+require_proot_distro() {
+    if ! command -v proot-distro >/dev/null 2>&1; then
+        printf '%s\n' 'PRoot-Distro nao encontrado. Execute bash install.sh pelo Termux.' >&2
+        exit 1
+    fi
+}
+
+# linux.conf e lido como dados, nunca executado.
+load_linux_config() {
+    local config_key config_value
+    linux_name=termux-ai
+    linux_user=node
+    if [[ -f "$state_dir/linux.conf" ]]; then
+        while IFS='=' read -r config_key config_value || [[ -n $config_key ]]; do
+            case "$config_key" in
+                name) linux_name="$config_value" ;;
+                user) linux_user="$config_value" ;;
+            esac
+        done < "$state_dir/linux.conf"
+    fi
+    if [[ ! $linux_name =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ || ! $linux_user =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+        printf 'Configuracao invalida em %s/linux.conf.\n' "$state_dir" >&2
+        exit 1
+    fi
+    login_args=(login "$linux_name")
+    if [[ $linux_user != root ]]; then
+        login_args+=(--user "$linux_user")
+    fi
+}
+
+prepare_maintenance() {
+    if [[ ${TERMUX_AI_GUEST:-} == 1 ]]; then
+        printf '%s\n' 'Use ia versoes, ia atualizar e ia diagnostico no Termux, fora do Linux.' >&2
+        exit 1
+    fi
+    require_proot_distro
+    load_linux_config
+}
+
+run_linux_stage() {
+    if [[ ! -f "$state_dir/setup-linux.sh" ]]; then
+        printf '%s\n' 'Componentes de atualizacao ausentes. Execute novamente bash install.sh pelo Termux.' >&2
+        return 1
+    fi
+    PROOT_VERBOSE=-1 proot-distro "${login_args[@]}" -- /bin/bash -se -- "$@" < "$state_dir/setup-linux.sh"
+}
+
+install_embeddinggemma() {
+    if (( $# > 0 )); then
+        printf '%s\n' 'Uso: ia embeddinggemma install' >&2
+        return 2
+    fi
+    prepare_maintenance
+    if [[ ! -f "$state_dir/setup-linux.sh" ]]; then
+        printf '%s\n' 'Componentes de instalacao ausentes. Execute novamente bash install.sh pelo Termux.' >&2
+        return 1
+    fi
+    printf '%s\n' 'Instalando Python e as dependencias opcionais do EmbeddingGemma no Linux.'
+    PROOT_VERBOSE=-1 proot-distro login "$linux_name" -- /bin/bash -se -- embeddinggemma-system < "$state_dir/setup-linux.sh" \
+        || return
+    run_linux_stage embeddinggemma-install
+}
+
+read_versions() {
+    local output marker tool installed latest status
+    version_rows=()
+    printf 'Consultando as versoes no Linux %s...\n' "$linux_name"
+    if ! output="$(run_linux_stage versions)"; then
+        printf '%s\n' 'Nao foi possivel consultar as versoes no Linux.' >&2
+        return 1
+    fi
+    while IFS=$'\t' read -r marker tool installed latest status; do
+        [[ $marker == @version ]] || continue
+        case "$tool" in
+            copilot|claude|codex|agy|opencode|hermes) ;;
+            *) continue ;;
+        esac
+        [[ $installed == - || $installed =~ $version_pattern ]] || continue
+        [[ $latest == - || $latest =~ $version_pattern ]] || continue
+        case "$status" in
+            current|outdated|missing|unknown) version_rows+=("$tool $installed $latest $status") ;;
+        esac
+    done <<< "$output"
+    if (( ${#version_rows[@]} == 0 )); then
+        printf '%s\n' 'Nao foi possivel consultar as versoes no Linux.' >&2
+        return 1
+    fi
+}
+
+status_label() {
+    case "$1" in
+        current) printf '%s' 'atualizado' ;;
+        outdated) printf '%s' 'atualizacao disponivel' ;;
+        missing)
+            if optional_missing "$2" "$1"; then
+                printf '%s' 'nao instalado (opcional)'
+            else
+                printf '%s' 'nao instalado'
+            fi
+            ;;
+        unknown) printf '%s' 'sem consulta' ;;
+    esac
+}
+
+print_version_table() {
+    local row tool installed latest status
+    printf '\n%-16s %-12s %-12s %s\n' 'Agente' 'Instalada' 'Disponivel' 'Situacao'
+    for row in "${version_rows[@]}"; do
+        read -r tool installed latest status <<< "$row"
+        printf '%-16s %-12s %-12s %s\n' "$(display_name "$tool")" "$installed" "$latest" "$(status_label "$status" "$tool")"
+    done
+}
+
+can_update() {
+    [[ $3 != - && ( $4 == outdated || $4 == missing ) ]]
+}
+
+# O Hermes Agent e opcional: ausente, nao entra no plano geral e so ia atualizar hermes o instala.
+optional_missing() {
+    [[ $1 == hermes && $2 == missing ]]
+}
+
+show_versions() {
+    local row tool installed latest status general=0 optional=0
+    if (( $# > 0 )); then
+        show_help >&2
+        return 2
+    fi
+    read_versions || return 1
+    print_version_table
+    for row in "${version_rows[@]}"; do
+        read -r tool installed latest status <<< "$row"
+        if optional_missing "$tool" "$status"; then
+            optional=1
+        elif can_update "$tool" "$installed" "$latest" "$status"; then
+            general=1
+        fi
+    done
+    if (( general )); then
+        printf '\n%s\n' 'Para atualizar: ia atualizar'
+    fi
+    if (( optional )); then
+        printf '\n%s\n' 'Hermes Agent (opcional, cerca de 2 GB): ia atualizar hermes'
+    fi
+}
+
+update_agents() {
+    local assume_yes=0 argument row tool installed latest status answer failed_list='' large_download=0
+    local -a selected=() plan=()
+    for argument in "$@"; do
+        case "$argument" in
+            --yes|-y) assume_yes=1 ;;
+            copilot|claude|codex|opencode|hermes) selected+=("$argument") ;;
+            antigravity|agy) selected+=(agy) ;;
+            *)
+                printf 'Agente desconhecido: %s\n' "$argument" >&2
+                show_help >&2
+                return 2
+                ;;
+        esac
+    done
+    read_versions || return 1
+    print_version_table
+    for row in "${version_rows[@]}"; do
+        read -r tool installed latest status <<< "$row"
+        if (( ${#selected[@]} > 0 )) && [[ " ${selected[*]} " != *" $tool "* ]]; then
+            continue
+        fi
+        if (( ${#selected[@]} == 0 )) && optional_missing "$tool" "$status"; then
+            continue
+        fi
+        if can_update "$tool" "$installed" "$latest" "$status"; then
+            plan+=("$row")
+        fi
+    done
+    if (( ${#plan[@]} == 0 )); then
+        printf '\n%s\n' 'Nenhuma atualizacao disponivel para os agentes selecionados.'
+        return 0
+    fi
+    printf '\n%s\n' 'Atualizacoes planejadas:'
+    for row in "${plan[@]}"; do
+        read -r tool installed latest status <<< "$row"
+        printf '  %-16s %s -> %s\n' "$(display_name "$tool")" "$installed" "$latest"
+        if optional_missing "$tool" "$status"; then
+            large_download=1
+        fi
+    done
+    if (( large_download )); then
+        printf '%s\n' 'Hermes Agent: o download tem cerca de 2 GB e a instalacao leva varios minutos.'
+    fi
+    printf '%s\n' 'Feche os agentes abertos antes de continuar.'
+    if (( ! assume_yes )); then
+        if [[ ! -t 0 ]]; then
+            printf '%s\n' 'Sem entrada interativa. Revise o plano e use ia atualizar --yes para confirmar.' >&2
+            return 1
+        fi
+        read -r -p 'Atualizar agora? [s/N] ' answer || answer=''
+        case "$answer" in
+            s|S|sim|SIM|y|Y|yes) ;;
+            *) printf '%s\n' 'Atualizacao cancelada.'; return 0 ;;
+        esac
+    fi
+    for row in "${plan[@]}"; do
+        read -r tool installed latest status <<< "$row"
+        printf '\n== %s %s ==\n' "$(display_name "$tool")" "$latest"
+        if ! run_linux_stage update "$tool" "$latest"; then
+            failed_list+="${failed_list:+, }$(display_name "$tool")"
+        fi
+    done
+    if [[ -n $failed_list ]]; then
+        printf '\nFalha ao atualizar: %s. Revise as mensagens acima e tente novamente.\n' "$failed_list" >&2
+        return 1
+    fi
+    printf '\n%s\n' 'Atualizacao concluida.'
+}
+
+# Aceita somente linhas conhecidas; qualquer outra saida do Linux e ignorada.
+valid_diag_line() {
+    local kind="$1" name="$2" status="$3" detail="$4"
+    case "$kind" in
+        check)
+            case "$name:$status" in
+                distro:ok) [[ $detail == - || $detail =~ $safe_text_pattern ]] ;;
+                node:ok|node:old|git:ok) [[ $detail =~ $version_pattern ]] ;;
+                node:missing|git:missing|network:ok|network:fail|workdir:ok|workdir:fail|workdir:skip) [[ $detail == - ]] ;;
+                *) return 1 ;;
+            esac
+            ;;
+        agent)
+            case "$name" in
+                copilot|claude|codex|agy|opencode|hermes) ;;
+                *) return 1 ;;
+            esac
+            case "$status" in
+                yes|no|unknown) [[ $detail =~ $version_pattern ]] ;;
+                missing|broken) [[ $detail == - ]] ;;
+                *) return 1 ;;
+            esac
+            ;;
+        isolation)
+            [[ $name == codex ]] || return 1
+            case "$status" in
+                unavailable|ineffective|active|missing) [[ $detail == - ]] ;;
+                *) return 1 ;;
+            esac
+            ;;
+        local)
+            [[ $name == embeddinggemma ]] || return 1
+            case "$status" in
+                ready|installed) [[ $detail =~ $version_pattern ]] ;;
+                missing|broken) [[ $detail == - ]] ;;
+                *) return 1 ;;
+            esac
+            ;;
+        web)
+            case "$name:$status:$detail" in
+                painel:active:127.0.0.1:7690|terminal:active:127.0.0.1:7680|embedding:active:127.0.0.1:8085) return 0 ;;
+                painel:stopped:-|terminal:stopped:-|embedding:stopped:-) return 0 ;;
+                *) return 1 ;;
+            esac
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+local_state_label() {
+    case "$1" in
+        ready) printf '%s' 'pronto (modelo em cache)' ;;
+        installed) printf '%s' 'instalado (baixa no 1o uso)' ;;
+        missing) printf '%s' 'opcional (nao instalado)' ;;
+        broken) printf '%s' 'instalacao incompleta' ;;
+        *) printf '%s' 'nao verificado' ;;
+    esac
+}
+
+web_state_label() {
+    case "$1" in
+        active) printf 'ativo (http://%s)' "$2" ;;
+        stopped) printf '%s' 'parado' ;;
+        *) printf '%s' 'nao verificado' ;;
+    esac
+}
+
+agent_state_label() {
+    case "$1" in
+        yes) printf '%s' 'login ok' ;;
+        no) printf '%s' 'sem login' ;;
+        unknown) printf '%s' 'login nao verificado' ;;
+        missing) printf '%s' 'nao instalado' ;;
+        broken) printf '%s' 'nao inicia' ;;
+        *) printf '%s' 'nao verificado' ;;
+    esac
+}
+
+login_hint() {
+    case "$1" in
+        copilot) printf '%s' 'GitHub Copilot: entre com ia copilot login.' ;;
+        claude) printf '%s' 'Claude Code: entre com ia claude auth login.' ;;
+        codex) printf '%s' 'Codex: entre com ia codex login.' ;;
+        agy) printf '%s' 'Antigravity CLI: abra ia agy e conclua o login.' ;;
+        opencode) printf '%s' 'OpenCode: entre com ia opencode auth login; sem chave de API, use GitHub Copilot ou ChatGPT Plus/Pro.' ;;
+        hermes) printf '%s' 'Hermes Agent: configure um provedor com ia hermes setup ou ia hermes model.' ;;
+    esac
+}
+
+show_diagnostics() {
+    local output marker kind name status detail tool label release machine termux_version proot_version available_kib
+    local system_hint=0
+    local -A diag_status=() diag_detail=()
+    local -a next_steps=()
+    if (( $# > 0 )); then
+        show_help >&2
+        return 2
+    fi
+    release="$(getprop ro.build.version.release 2> /dev/null)" || release=''
+    [[ $release =~ ^[0-9A-Za-z._-]{1,20}$ ]] || release='?'
+    machine="$(uname -m 2> /dev/null)" || machine=''
+    [[ $machine =~ ^[0-9A-Za-z_]{1,20}$ ]] || machine='?'
+    termux_version="${TERMUX_VERSION:-}"
+    [[ $termux_version =~ ^[0-9A-Za-z._+-]{1,40}$ ]] || termux_version='?'
+    # shellcheck disable=SC2016
+    proot_version="$(dpkg-query -W -f='${Version}' proot-distro 2> /dev/null)" || proot_version=''
+    [[ $proot_version =~ ^[0-9A-Za-z.+~:-]{1,40}$ ]] || proot_version='?'
+    available_kib="$(df -Pk "$HOME" 2> /dev/null | awk 'NR == 2 { print $4 }')" || available_kib=''
+    printf '\n%s\n\n%s\n' 'Diagnostico do Termux AI' 'Termux'
+    printf '  %-15s %s (%s)\n' Android "$release" "$machine"
+    printf '  %-15s %s\n' Termux "$termux_version"
+    printf '  %-15s %s\n' PRoot-Distro "$proot_version"
+    if [[ $available_kib =~ ^[0-9]{1,15}$ ]]; then
+        available_kib=$((10#$available_kib))
+        printf '  %-15s %d.%d GiB\n' 'Espaco livre' $((available_kib / 1048576)) $((available_kib % 1048576 * 10 / 1048576))
+        if (( available_kib < 2 * 1048576 )); then
+            next_steps+=('Pouco espaco livre: mantenha pelo menos 2 GiB para atualizar os agentes.')
+        fi
+    else
+        printf '  %-15s %s\n' 'Espaco livre' '?'
+    fi
+    printf '  %-15s %s, usuario %s\n' Linux "$linux_name" "$linux_user"
+    printf '\nConsultando o Linux %s...\n' "$linux_name"
+    output="$(run_linux_stage diagnose "$PWD")" || true
+    while IFS=$'\t' read -r marker kind name status detail; do
+        [[ $marker == @diag ]] || continue
+        valid_diag_line "$kind" "$name" "$status" "$detail" || continue
+        diag_status["$kind:$name"]="$status"
+        diag_detail["$kind:$name"]="$detail"
+    done <<< "$output"
+    if (( ${#diag_status[@]} == 0 )); then
+        printf '%s\n' 'Nao foi possivel consultar o Linux. Execute novamente bash install.sh no Termux.' >&2
+        return 1
+    fi
+
+    printf '\n%s\n' Linux
+    label="${diag_detail[check:distro]:--}"
+    [[ $label != - ]] || label='?'
+    printf '  %-15s %s\n' Sistema "$label"
+    case "${diag_status[check:node]:-}" in
+        ok) label="${diag_detail[check:node]}" ;;
+        old) label="${diag_detail[check:node]} (requer 22 ou superior)"; system_hint=1 ;;
+        missing) label='nao encontrado'; system_hint=1 ;;
+        *) label='nao verificado' ;;
+    esac
+    printf '  %-15s %s\n' Node.js "$label"
+    case "${diag_status[check:git]:-}" in
+        ok) label="${diag_detail[check:git]}" ;;
+        missing) label='nao encontrado'; system_hint=1 ;;
+        *) label='nao verificado' ;;
+    esac
+    printf '  %-15s %s\n' Git "$label"
+    if (( system_hint )); then
+        next_steps+=('Node.js 22+ e Git sao necessarios no Linux: execute novamente bash install.sh no Termux.')
+    fi
+    case "${diag_status[check:network]:-}" in
+        ok) label='ok' ;;
+        fail)
+            label='sem acesso'
+            next_steps+=('Sem internet no Linux: confira a conexao; os agentes dependem dela.')
+            ;;
+        *) label='nao verificada' ;;
+    esac
+    printf '  %-15s %s\n' Internet "$label"
+    case "${diag_status[check:workdir]:-}" in
+        ok) label='aceita gravacao' ;;
+        fail)
+            label='sem gravacao'
+            next_steps+=('A pasta atual nao aceita gravacao no Linux: abra os agentes em uma pasta da home do Termux.')
+            ;;
+        *) label='nao verificada' ;;
+    esac
+    printf '  %-15s %s\n' 'Pasta atual' "$label"
+
+    printf '\n%s\n  %-16s %-12s %s\n' Agentes Agente Versao Situacao
+    for tool in copilot claude codex agy opencode hermes; do
+        status="${diag_status[agent:$tool]:-}"
+        [[ $tool != hermes || -n $status ]] || continue
+        label="$(agent_state_label "$status")"
+        if optional_missing "$tool" "$status"; then
+            label='opcional (nao instalado)'
+        fi
+        printf '  %-16s %-12s %s\n' "$(display_name "$tool")" "${diag_detail[agent:$tool]:--}" "$label"
+        case "$status" in
+            no) next_steps+=("$(login_hint "$tool")") ;;
+            missing)
+                if ! optional_missing "$tool" "$status"; then
+                    next_steps+=("$(display_name "$tool"): instale com ia atualizar $tool.")
+                fi
+                ;;
+            broken) next_steps+=("$(display_name "$tool"): reinstale com ia atualizar $tool.") ;;
+        esac
+    done
+
+    if [[ -n ${diag_status[local:embeddinggemma]:-} || -n ${diag_status[web:painel]:-} || -n ${diag_status[web:terminal]:-} || -n ${diag_status[web:embedding]:-} ]]; then
+        printf '\n%s\n' 'Recursos locais'
+        status="${diag_status[local:embeddinggemma]:-}"
+        printf '  %-16s %-12s %s\n' 'EmbeddingGemma 2' "${diag_detail[local:embeddinggemma]:--}" "$(local_state_label "$status")"
+        if [[ $status == broken ]]; then
+            next_steps+=('EmbeddingGemma 2: reinstale com ia embeddinggemma install.')
+        fi
+        label="$(web_state_label "${diag_status[web:painel]:-}" "${diag_detail[web:painel]:--}")"
+        if [[ ${diag_status[web:painel]:-} == active ]]; then
+            label='ativo (link com token: ia web status painel)'
+        fi
+        printf '  %-16s %s\n' 'Painel web' "$label"
+        printf '  %-16s %s\n' 'WebUI Terminal' "$(web_state_label "${diag_status[web:terminal]:-}" "${diag_detail[web:terminal]:--}")"
+        printf '  %-16s %s\n' 'WebUI Embedding' "$(web_state_label "${diag_status[web:embedding]:-}" "${diag_detail[web:embedding]:--}")"
+    fi
+
+    printf '\n%s\n  %s\n' Protecao 'PRoot nao isola os agentes: eles acessam os mesmos arquivos que o Termux.'
+    case "${diag_status[agent:codex]:-}" in
+        missing|broken) ;;
+        *)
+            case "${diag_status[isolation:codex]:-}" in
+                unavailable) printf '  %s\n' 'Codex: o sandbox nao funciona aqui; ia codex abre no modo Pedir aprovacao.' ;;
+                ineffective)
+                    printf '  %s\n' 'Codex: o sandbox iniciou, mas nao bloqueou uma gravacao de teste.'
+                    next_steps+=('Codex: nao confie no sandbox, pois comandos podem rodar sem aprovacao; use pastas com backup ou Git.')
+                    ;;
+                active) printf '  %s\n' 'Codex: o sandbox bloqueou uma gravacao de teste.' ;;
+                *) printf '  %s\n' 'Codex: sandbox nao verificado.' ;;
+            esac
+            ;;
+    esac
+    printf '  %s\n' 'Demais agentes: valem as confirmacoes de cada agente.'
+
+    printf '\n%s\n' 'Proximos passos'
+    if (( ${#next_steps[@]} == 0 )); then
+        printf '  %s\n' 'Nenhuma acao necessaria.'
+    else
+        printf '  - %s\n' "${next_steps[@]}"
+    fi
+}
+
+# Sem sandbox no Android/PRoot, o Codex so pede aprovacao no modo on-request.
+# Flags proprias de permissao, perfil ou ajuda mantem a escolha do usuario.
+classify_codex_args() {
+    local -a arguments=("$@")
+    local index argument config_key skip_value=0 command_index=-1
+    codex_mode=ask
+    codex_insert_index=0
+    for (( index = 0; index < ${#arguments[@]}; index++ )); do
+        argument="${arguments[index]}"
+        if (( skip_value )); then
+            skip_value=0
+            continue
+        fi
+        config_key=''
+        case "$argument" in
+            --) break ;;
+            -h|--help|-V|--version)
+                codex_mode=none
+                return 0
+                ;;
+            -s|-s?*|--sandbox|--sandbox=*|-a|-a?*|--ask-for-approval|--ask-for-approval=*|-p|-p?*|--profile|--profile=*|--approve-for-me|--dangerously-bypass-approvals-and-sandbox|--full-auto|--yolo)
+                codex_mode=own
+                return 0
+                ;;
+            -c|--config)
+                config_key="${arguments[index + 1]:-}"
+                skip_value=1
+                ;;
+            -c?*) config_key="${argument#-c}" ;;
+            --config=*) config_key="${argument#--config=}" ;;
+            -m|--model|-i|--image|-C|--cd|--add-dir|--enable|--disable|--remote|--remote-auth-token-env|--local-provider) skip_value=1 ;;
+            -*) ;;
+            *) (( command_index >= 0 )) || command_index=$index ;;
+        esac
+        config_key="${config_key%%=*}"
+        case "${config_key//[[:space:]]/}" in
+            sandbox_mode|approval_policy|approval_policy.*|default_permissions|permissions|permissions.*|profile)
+                codex_mode=own
+                return 0
+                ;;
+        esac
+    done
+    (( command_index >= 0 )) || return 0
+    case "${arguments[command_index]}" in
+        resume|fork) codex_insert_index=$((command_index + 1)) ;;
+        exec|e|review) codex_mode=warn ;;
+        agents|login|logout|mcp|mcp-server|plugin|app-server|remote-control|completion|update|doctor|sandbox|debug|apply|a|queue|archive|delete|migrate-rollouts|unarchive|cloud|exec-server|features|help) codex_mode=none ;;
+    esac
+}
+
+run_maintenance() {
+    local status=0
+    prepare_maintenance
+    "$@" || status=$?
+    return "$status"
+}
+
+web_stage_ready() {
+    if [[ ${TERMUX_AI_GUEST:-} == 1 ]]; then
+        printf '%s\n' 'Use ia web no Termux, fora do Linux.' >&2
+        return 1
+    fi
+    require_proot_distro
+    load_linux_config
+    if [[ ! -f "$state_dir/webui.sh" || ! -f "$state_dir/web/menu.sh" || ! -f "$state_dir/tools/embeddinggemma_web.py" ]]; then
+        printf '%s\n' 'Arquivos da WebUI ausentes. Atualize o repositorio e execute bash install.sh no Termux.' >&2
+        return 1
+    fi
+}
+
+run_web_stage() {
+    web_stage_ready || return 1
+    PROOT_VERBOSE=-1 proot-distro "${login_args[@]}" --work-dir "$PWD" --no-kill-on-exit -- \
+        /bin/bash -se -- "$1" "$2" < "$state_dir/webui.sh"
+}
+
+web_end_pattern='__WEBUI_FIM__ [0-9]+$'
+
+# Com --no-kill-on-exit o proot-distro so volta quando o ultimo processo do Linux termina, e os servicos ficam ativos de
+# proposito. Por isso o inicio roda em segundo plano e o fim do webui.sh vem do marcador que ele imprime.
+# O proot nao pode ser encerrado aqui: sem ele os servicos perdem o acesso aos arquivos do Linux.
+run_web_start() {
+    local target="$1" limit="${TERMUX_AI_WEB_START_TIMEOUT:-180}" pid end_line deadline status=0 ended=0
+    web_stage_ready || return 1
+    [[ $limit =~ ^[1-9][0-9]*$ ]] || limit=180
+    printf '%s\n' 'Iniciando a WebUI...' >&2
+    PROOT_VERBOSE=-1 nohup proot-distro "${login_args[@]}" --work-dir "$PWD" --no-kill-on-exit -- \
+        /bin/bash -se -- start "$target" --marcador < "$state_dir/webui.sh" > "$web_raw" 2>&1 &
+    pid=$!
+    deadline=$((SECONDS + limit))
+    while :; do
+        if grep -Eq "$web_end_pattern" "$web_raw"; then
+            ended=1
+            break
+        fi
+        if ! kill -0 "$pid" 2>/dev/null; then
+            wait "$pid" || status=$?
+            ended=1
+            break
+        fi
+        (( SECONDS < deadline )) || break
+        sleep 0.2
+    done
+    end_line="$(grep -Eo "$web_end_pattern" "$web_raw" | tail -n 1)" || true
+    [[ -z $end_line ]] || status="${end_line##* }"
+    sed -E "/^$web_end_pattern/d; s/$web_end_pattern//" "$web_raw" \
+        | grep -Fv -e "option '--no-kill-on-exit' is enabled" > "$web_log" || true
+    cat -- "$web_log"
+    if (( ended == 0 )); then
+        printf 'A WebUI nao terminou de iniciar em %s s. Confira com: ia web status\n' "$limit" >&2
+        status=1
+    fi
+    return "$status"
+}
+
+web_usage() {
+    printf '%s\n' 'Uso: ia web [start|stop|status|abrir] [painel|terminal|embedding|todos]' >&2
+}
+
+# Marca o que realmente subiu, mesmo quando outro servico falhou, para o wake-lock acompanhar o que esta ativo.
+# O painel so conta depois de responder: "iniciado em" sai antes de o servidor abrir a porta.
+update_web_wake_lock() {
+    local action="$1" target="$2" log="$3" name running
+    mkdir -p "$state_dir/web"
+    if [[ $action == start ]]; then
+        for name in painel terminal embedding; do
+            case "$name" in
+                painel) running='^(painel ja esta ativo|Painel: http)' ;;
+                *) running="^$name (iniciado em|ja esta ativo)" ;;
+            esac
+            if grep -Eq "$running" "$log"; then
+                : > "$state_dir/web/active.$name"
+            fi
+        done
+        if compgen -G "$state_dir/web/active.*" > /dev/null && command -v termux-wake-lock >/dev/null 2>&1; then
+            termux-wake-lock >/dev/null 2>&1 || true
+        fi
+        return 0
+    fi
+    if [[ $target == todos ]]; then
+        rm -f -- "$state_dir/web/active.painel" "$state_dir/web/active.terminal" "$state_dir/web/active.embedding"
+    else
+        rm -f -- "$state_dir/web/active.$target"
+    fi
+    if ! compgen -G "$state_dir/web/active.*" > /dev/null && command -v termux-wake-unlock >/dev/null 2>&1; then
+        termux-wake-unlock >/dev/null 2>&1 || true
+    fi
+}
+
+open_panel() {
+    if command -v termux-open-url >/dev/null 2>&1 && termux-open-url "$1" >/dev/null 2>&1; then
+        printf '%s\n' 'Abrindo o painel no navegador.'
+    else
+        printf '%s\n' 'Abra o link do painel no navegador deste aparelho.'
+    fi
+}
+
+manage_web() {
+    local action="${1:-start}" default_target stage_action target status=0 panel_line=''
+    case "$action" in
+        start) default_target=padrao ;;
+        stop|status) default_target=todos ;;
+        abrir) default_target=painel ;;
+        *) web_usage; return 2 ;;
+    esac
+    if (( $# > 2 )); then
+        web_usage
+        return 2
+    fi
+    if (( $# == 2 )); then
+        case "$2" in
+            painel|terminal|embedding|todos) ;;
+            *) web_usage; return 2 ;;
+        esac
+    fi
+    target="${2:-$default_target}"
+    if [[ $action == abrir && $target != painel ]]; then
+        web_usage
+        return 2
+    fi
+    stage_action="$action"
+    [[ $action != abrir ]] || stage_action=start
+    # O resultado traz o link com token do painel: os arquivos sao privados e removidos ao sair.
+    web_log="$(mktemp)"
+    web_raw="$(mktemp)"
+    trap 'rm -f -- "${web_log:-}" "${web_raw:-}"' EXIT
+    if [[ $stage_action == start ]]; then
+        run_web_start "$target" || status=$?
+    else
+        run_web_stage "$stage_action" "$target" | tee "$web_log" || status=${PIPESTATUS[0]}
+    fi
+    case "$stage_action" in
+        start) update_web_wake_lock start "$target" "$web_log" ;;
+        stop) (( status != 0 )) || update_web_wake_lock stop "$target" "$web_log" ;;
+    esac
+    if (( status == 0 )) && [[ $stage_action == start ]]; then
+        if grep -Eq '^terminal (iniciado em|ja esta ativo)' "$web_log"; then
+            printf '%s\n' 'Terminal: http://127.0.0.1:7680'
+        fi
+        if grep -Eq '^embedding (iniciado em|ja esta ativo)' "$web_log"; then
+            printf '%s\n' 'EmbeddingGemma: http://127.0.0.1:8085'
+        fi
+        printf '%s\n' 'Acesso restrito a este aparelho (127.0.0.1). Para encerrar: ia web stop'
+        panel_line="$(grep -Eo '^Painel: http://127\.0\.0\.1:7690/[0-9a-f]{32}/$' "$web_log" | head -n 1)" || true
+        if [[ -n $panel_line ]]; then
+            printf '%s\n' 'O link do painel tem um token de acesso: trate-o como uma senha.'
+            if [[ $action == abrir || ( -t 1 && ${TERMUX_AI_NO_OPEN:-} != 1 ) ]]; then
+                open_panel "${panel_line#Painel: }"
+            fi
+        fi
+    fi
+    rm -f -- "$web_log" "$web_raw"
+    return "$status"
+}
+
+run_orchestrate() {
+    if [[ ${TERMUX_AI_GUEST:-} == 1 ]]; then
+        printf '%s\n' 'Use ia orquestrar no Termux, fora do Linux.' >&2
+        return 1
+    fi
+    require_proot_distro
+    load_linux_config
+    exec proot-distro "${login_args[@]}" --work-dir "$PWD" -- \
+        /bin/bash -lc 'export TERMUX_AI_GUEST=1; export PATH="$HOME/.local/bin:$PATH"; hub="$HOME/.local/share/termux-ai/hub/cli.mjs"; if [ ! -f "$hub" ]; then echo "Componentes do painel ausentes. Execute novamente bash install.sh no Termux." >&2; exit 1; fi; exec node "$hub" "$@"' \
+        termux-ai "$@"
 }
 
 launcher_name="${0##*/}"
@@ -18,23 +727,61 @@ if [[ "$launcher_name" == ia ]]; then
             show_help
             exit 0
         fi
-        printf '\nTermux AI\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (experimental)\n4. Terminal Linux\n5. Google Antigravity CLI\n6. OpenCode (experimental)\n0. Sair\n\n'
-        if ! read -r -p 'Escolha: ' selection; then
-            exit 0
-        fi
-        case "$selection" in
-            1) tool_name=copilot ;;
-            2) tool_name=claude ;;
-            3) tool_name=codex ;;
-            4) tool_name=terminal ;;
-            5) tool_name=agy ;;
-            6) tool_name=opencode ;;
-            0) exit 0 ;;
-            *) printf '%s\n' 'Opcao invalida.' >&2; exit 2 ;;
-        esac
+        while true; do
+            printf '\nTermux AI\n\n1. GitHub Copilot\n2. Claude Code\n3. Codex (experimental)\n4. Terminal Linux\n5. Google Antigravity CLI\n6. OpenCode (experimental)\n7. EmbeddingGemma 2 (local, opcional)\n8. Versoes e atualizacoes dos agentes\n9. Diagnostico do ambiente\n10. Hermes Agent (opcional)\n11. Painel web (varios agentes)\n0. Sair\n\n'
+            if ! read -r -p 'Escolha: ' selection; then
+                exit 0
+            fi
+            case "$selection" in
+                1) tool_name=copilot ;;
+                2) tool_name=claude ;;
+                3) tool_name=codex ;;
+                4) tool_name=terminal ;;
+                5) tool_name=agy ;;
+                6) tool_name=opencode ;;
+                7) tool_name=embeddinggemma ;;
+                8) run_maintenance update_agents || true; continue ;;
+                9) run_maintenance show_diagnostics || true; continue ;;
+                10) tool_name=hermes ;;
+                11) manage_web || true; continue ;;
+                0) exit 0 ;;
+                *) printf '%s\n' 'Opcao invalida.' >&2; exit 2 ;;
+            esac
+            break
+        done
     elif [[ "$1" == --help || "$1" == -h ]]; then
         show_help
         exit 0
+    elif [[ "$1" == versoes ]]; then
+        shift
+        status=0
+        run_maintenance show_versions "$@" || status=$?
+        exit "$status"
+    elif [[ "$1" == atualizar ]]; then
+        shift
+        status=0
+        run_maintenance update_agents "$@" || status=$?
+        exit "$status"
+    elif [[ "$1" == diagnostico ]]; then
+        shift
+        status=0
+        run_maintenance show_diagnostics "$@" || status=$?
+        exit "$status"
+    elif [[ "$1" == orquestrar ]]; then
+        shift
+        status=0
+        run_orchestrate "$@" || status=$?
+        exit "$status"
+    elif [[ "$1" == web ]]; then
+        shift
+        status=0
+        manage_web "$@" || status=$?
+        exit "$status"
+    elif { [[ "$1" == embeddinggemma || "$1" == embedding ]] && [[ ${2:-} == install ]]; }; then
+        shift 2
+        status=0
+        install_embeddinggemma "$@" || status=$?
+        exit "$status"
     else
         tool_name="$1"
         shift
@@ -44,8 +791,9 @@ else
 fi
 
 case "$tool_name" in
-    codex|copilot|claude|opencode) ;;
+    codex|copilot|claude|opencode|hermes) ;;
     antigravity|agy) tool_name=agy ;;
+    embeddinggemma|embedding) tool_name=embeddinggemma ;;
     handoff)
         set -- handoff "$@"
         tool_name=ia-handoff
@@ -54,7 +802,7 @@ case "$tool_name" in
         set -- continue "$@"
         tool_name=ia-handoff
         ;;
-    terminal|linux)
+    terminal|linux|ubuntu)
         tool_name=/bin/bash
         set -- -l "$@"
         ;;
@@ -62,15 +810,42 @@ case "$tool_name" in
 esac
 
 if [[ ${TERMUX_AI_GUEST:-} == 1 ]]; then
-    printf '%s\n' 'O agente nao foi encontrado dentro do Linux. Execute novamente o instalador pelo Termux.' >&2
+    if [[ $tool_name == embeddinggemma ]]; then
+        printf '%s\n' 'EmbeddingGemma 2 nao esta instalado no Linux. Ele e opcional: veja a secao EmbeddingGemma 2 do README.' >&2
+    else
+        printf '%s\n' 'O agente nao foi encontrado dentro do Linux. Execute novamente o instalador pelo Termux.' >&2
+    fi
     exit 1
 fi
 
-if ! command -v proot-distro >/dev/null 2>&1; then
-    printf '%s\n' 'PRoot-Distro nao encontrado. Execute bash install.sh pelo Termux.' >&2
-    exit 1
+require_proot_distro
+load_linux_config
+
+if [[ $tool_name == codex ]]; then
+    classify_codex_args "$@"
+    case "$codex_mode" in
+        ask)
+            printf '%s\n' \
+                'Codex: o sandbox nao funciona no Android/PRoot.' \
+                'Modo Pedir aprovacao: confirme cada comando ou edicao. Detalhes: ia diagnostico' >&2
+            set -- "${@:1:codex_insert_index}" -s workspace-write -a on-request "${@:codex_insert_index+1}"
+            ;;
+        warn)
+            printf '%s\n' \
+                'Codex: sem sandbox no Android/PRoot, os comandos do agente falham em exec e review.' \
+                'Prefira ia codex, que abre no modo Pedir aprovacao. Detalhes: ia diagnostico' >&2
+            ;;
+    esac
 fi
 
-exec proot-distro login termux-ai --user node --work-dir "$PWD" -- \
-    /bin/bash -lc 'export TERMUX_AI_GUEST=1; export PATH="$HOME/.local/bin:$PATH"; command -v "$1" >/dev/null 2>&1 || { printf "%s\n" "Comando $1 nao encontrado no Linux. Execute no Termux (fora do Linux): cd ~/AI-Termux-Android && git pull --ff-only && bash install.sh" >&2; exit 127; }; exec "$@"' \
+guest_script='export TERMUX_AI_GUEST=1; export PATH="$HOME/.local/bin:$PATH"; exec "$@"'
+if [[ $tool_name == hermes ]]; then
+    guest_script='export TERMUX_AI_GUEST=1; export PATH="$HOME/.local/bin:$PATH"; if ! command -v "$1" >/dev/null 2>&1; then echo "Hermes Agent nao esta instalado (e opcional). No Termux, rode: ia atualizar hermes" >&2; exit 127; fi; exec "$@"'
+fi
+if [[ $tool_name == ia-handoff ]]; then
+    guest_script='export TERMUX_AI_GUEST=1; export PATH="$HOME/.local/bin:$PATH"; if ! command -v "$1" >/dev/null 2>&1; then echo "Handoff nao instalado no Linux. No Termux: cd ~/AI-Termux-Android && git pull --ff-only && bash install.sh" >&2; exit 127; fi; exec "$@"'
+fi
+
+exec proot-distro "${login_args[@]}" --work-dir "$PWD" -- \
+    /bin/bash -lc "$guest_script" \
     termux-ai "$tool_name" "$@"

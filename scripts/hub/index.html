@@ -1,0 +1,1910 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0d1117">
+<meta name="referrer" content="no-referrer">
+<title>Termux AI · Painel</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23161b22'/%3E%3Cpath d='M8 11l6 5-6 5' stroke='%2358a6ff' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M17 22h8' stroke='%2319c3a1' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<style nonce="__NONCE__">
+:root{
+  color-scheme:dark;
+  --bg:#0d1117;--bg2:#010409;--panel:#161b22;--panel2:#1c2128;--line:#30363d;--line2:#21262d;
+  --text:#e6edf3;--muted:#8b949e;--accent:#238636;--accent2:#2ea043;--link:#58a6ff;
+  --ok:#3fb950;--warn:#d29922;--bad:#f85149;--info:#58a6ff;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --card-h:clamp(320px,50vh,600px);
+}
+*{box-sizing:border-box}
+html{scrollbar-color:#30363d transparent}
+body{margin:0;min-height:100vh;display:flex;flex-direction:column;background:var(--bg);color:var(--text);font:14px/1.45 var(--sans);-webkit-text-size-adjust:100%}
+[hidden]{display:none!important}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--link)}
+.grow{flex:1}
+.muted{color:var(--muted)}
+.offscreen{position:fixed;left:-9999px;top:0;opacity:0}
+
+/* cabecalho */
+.top{position:sticky;top:0;z-index:30;background:rgba(13,17,23,.94);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.top-in{display:flex;align-items:center;gap:8px 16px;flex-wrap:wrap;padding:8px 14px;max-width:2000px;margin:0 auto}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:15px;white-space:nowrap}
+.brand .sub{color:var(--muted);font-weight:500}
+.logo{position:relative;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;background:conic-gradient(from 200deg,#a371f7,#58a6ff,#19c3a1,#e3b341,#f778ba,#d97757,#a371f7)}
+.logo::after{content:"";position:absolute;inset:3px;border-radius:6px;background:var(--bg)}
+.logo i{position:relative;z-index:1;font-style:normal;font-size:11px;font-weight:800;letter-spacing:-.5px}
+.tabs{display:flex;gap:2px;padding:3px;background:var(--bg2);border:1px solid var(--line);border-radius:10px}
+.tab{border:0;background:transparent;color:var(--muted);padding:6px 14px;border-radius:7px;cursor:pointer;font-weight:600;display:inline-flex;gap:7px;align-items:center}
+.tab:hover{color:var(--text)}
+.tab[aria-selected=true]{background:var(--panel2);color:var(--text);box-shadow:0 0 0 1px var(--line) inset}
+.count{background:var(--line);border-radius:999px;font-size:11px;padding:0 7px;line-height:18px;color:var(--text)}
+.meters{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);color:var(--muted);border-radius:999px;padding:2px 10px;font-size:12px;white-space:nowrap}
+button.pill{cursor:pointer}
+.pill.ok{color:var(--ok)}
+.pill.warn{color:var(--warn);border-color:rgba(210,153,34,.5)}
+.pill.bad{color:var(--bad);border-color:rgba(248,81,73,.5)}
+.led{width:7px;height:7px;border-radius:50%;background:currentColor;display:inline-block}
+
+main{flex:1;width:100%;max-width:2000px;margin:0 auto;padding:14px}
+.view{display:none}
+.view.on{display:block}
+#view-agents.on{display:flex;flex-direction:column;min-height:calc(100vh - 76px)}
+
+/* botoes e campos */
+.btn{appearance:none;border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:8px;padding:6px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover:not(:disabled){border-color:#8b949e;background:#21262d}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.primary{background:var(--accent);border-color:rgba(240,246,252,.12);color:#fff;font-weight:600}
+.btn.primary:hover:not(:disabled){background:var(--accent2);border-color:rgba(240,246,252,.25)}
+.btn.danger:hover:not(:disabled),.btn.danger.armed{border-color:var(--bad);color:var(--bad)}
+.btn.sm{padding:2px 8px;font-size:12px;border-radius:6px}
+.btn.icon{padding:2px 7px;min-width:26px;justify-content:center}
+.btn.link{background:none;border-color:transparent;color:var(--link);padding:2px 6px}
+.btn.link:hover:not(:disabled){background:rgba(88,166,255,.1);border-color:transparent}
+:is(.btn,.tab,.mode,.chip-btn,.pill-pick,.seg button,input,select,textarea,summary):focus-visible{outline:2px solid var(--link);outline-offset:1px}
+textarea,input[type=text],input[type=number],select{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--text)}
+textarea{width:100%;resize:vertical;min-height:2.8em;font-family:var(--sans)}
+select{max-width:100%}
+.field{display:grid;gap:5px;margin:0 0 12px}
+.field>span,.label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.hint{font-size:12.5px;color:var(--muted);margin:0 0 10px}
+.row{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center}
+
+/* barra de ferramentas */
+.bar{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;margin-bottom:12px}
+.launch{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip-btn{--agent:var(--muted);display:inline-flex;gap:7px;align-items:center;cursor:pointer;border:1px solid color-mix(in srgb,var(--agent) 55%,var(--line));background:color-mix(in srgb,var(--agent) 12%,var(--panel));border-radius:999px;padding:4px 12px 4px 6px}
+.chip-btn:hover{background:color-mix(in srgb,var(--agent) 22%,var(--panel))}
+.chip-btn .plus{width:20px;height:20px;border-radius:50%;background:var(--agent);color:#0d1117;display:grid;place-items:center;font-weight:800;line-height:1}
+.chip-btn.off{filter:grayscale(1);opacity:.55}
+.chip-btn small{color:var(--muted);font-size:11px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--panel);padding:5px 12px;cursor:pointer;color:var(--muted)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed=true]{background:#21262d;color:var(--text)}
+.dirbtn{max-width:min(46vw,340px);overflow:hidden;text-overflow:ellipsis}
+
+.banner{border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin-bottom:12px}
+.banner.bad{border-color:rgba(248,81,73,.5);background:rgba(248,81,73,.08);color:#ffa198}
+.banner.warn{border-color:rgba(210,153,34,.5);background:rgba(210,153,34,.08);color:#e3b341}
+.empty{border:1px dashed var(--line);border-radius:14px;padding:36px 20px;text-align:center;color:var(--muted);margin-bottom:12px}
+.empty h2{margin:0 0 6px;color:var(--text);font-size:18px}
+.empty p{margin:4px auto;max-width:640px}
+
+/* cartoes de agentes */
+.cards{flex:1;display:grid;gap:12px;align-content:start;align-items:start;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));margin-bottom:12px}
+.card{--agent:var(--muted);container-type:inline-size;display:flex;flex-direction:column;height:var(--card-h);min-width:0;background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--agent);border-radius:12px;overflow:hidden;transition:box-shadow .25s,border-color .25s}
+.card.working{border-color:color-mix(in srgb,var(--agent) 65%,var(--line));box-shadow:0 0 0 1px color-mix(in srgb,var(--agent) 35%,transparent),0 0 26px -8px var(--agent)}
+.card.dead{opacity:.9}
+.card-head{display:flex;align-items:center;gap:8px;min-height:40px;padding:5px 8px;background:color-mix(in srgb,var(--agent) 9%,var(--panel));border-bottom:1px solid var(--line2)}
+.card-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.card-head>.chip,.card-head>.btn,.card-head>.pick{flex:none}
+.card-head .dir{color:var(--muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.pick{display:inline-flex;align-items:center;cursor:pointer}
+.pick input{width:16px;height:16px;margin:0;accent-color:var(--agent)}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--agent,var(--muted));display:inline-block;flex:none}
+.card-body{position:relative;flex:1;min-height:0;background:var(--bg2)}
+.card-body iframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:#0d1117}
+.preview{margin:0;padding:8px 10px;height:100%;overflow:auto;font:12px/1.4 var(--mono);color:#c9d1d9;white-space:pre}
+.revive{position:absolute;right:12px;bottom:12px}
+.keys{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:5px 8px;border-top:1px solid var(--line2);background:var(--panel)}
+.keys .btn{font-family:var(--mono);min-width:34px;justify-content:center}
+.keys .more{margin-left:auto}
+@container (max-width:380px){.card-head .dir{display:none}}
+
+.cards.focus{grid-template-columns:minmax(0,1fr) 300px}
+.cards.focus .card.focused{grid-column:1;grid-row:1/span 6;height:clamp(420px,calc(100vh - 250px),1100px)}
+.cards.focus .card:not(.focused){grid-column:2;height:auto}
+.cards.focus .card:not(.focused) .card-body{flex:none;height:132px;cursor:pointer}
+.cards.focus .card:not(.focused) .keys{display:none}
+.cards.focus .card:not(.focused) .card-head{cursor:pointer}
+.cards.focus .card:not(.focused) .card-head button[aria-label="Ampliar"]{display:none}
+@media (max-width:900px){
+  .cards.focus{grid-template-columns:minmax(0,1fr)}
+  .cards.focus .card.focused{grid-row:auto;order:-1;height:72vh}
+  .cards.focus .card:not(.focused){grid-column:1}
+}
+
+/* estado dos agentes */
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:1px 9px;font-size:11.5px;font-weight:600;color:var(--muted);white-space:nowrap}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.chip.working,.chip.st-done{color:var(--ok);border-color:rgba(63,185,80,.45);background:rgba(63,185,80,.08)}
+.chip.idle,.chip.st-running{color:var(--info);border-color:rgba(88,166,255,.45);background:rgba(88,166,255,.08)}
+.chip.dead,.chip.st-error{color:var(--bad);border-color:rgba(248,81,73,.45);background:rgba(248,81,73,.08)}
+.chip.st-cancelled{color:var(--warn);border-color:rgba(210,153,34,.45);background:rgba(210,153,34,.08)}
+.chip.working::before,.chip.st-running::before{animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25;transform:scale(.7)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* compositor */
+.dock{position:sticky;bottom:0;z-index:15;margin-top:auto;padding:8px 0 10px;background:linear-gradient(to top,var(--bg) 78%,transparent)}
+.dock-in{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:8px 10px;box-shadow:0 -8px 26px rgba(1,4,9,.65)}
+.dock-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-bottom:6px;font-size:12.5px;color:var(--muted)}
+.dock-meta .targets{color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.dock-row{display:flex;gap:10px;align-items:flex-end}
+.dock-row textarea{flex:1;min-height:3em;max-height:40vh}
+.dock-actions{display:grid;gap:6px}
+
+/* orquestracao */
+.lock{display:flex;gap:10px;align-items:center;border:1px solid rgba(210,153,34,.4);background:rgba(210,153,34,.08);color:#e3b341;border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:13px}
+.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-bottom:12px}
+.mode{display:grid;gap:6px;text-align:left;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:12px 14px;cursor:pointer}
+.mode:hover{border-color:#6e7681}
+.mode[aria-pressed=true]{border-color:var(--link);background:#0f1b2d;box-shadow:0 0 0 1px var(--link) inset}
+.mode .mt{font-size:15px;font-weight:700}
+.mode .ds{color:var(--muted);font-size:12.5px}
+.row>.hint{margin:0}
+.flow{display:flex;align-items:center;gap:5px;min-height:20px;color:var(--muted);font-size:13px}
+.panel{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:14px;margin-bottom:12px}
+.pills{display:flex;flex-wrap:wrap;gap:8px}
+.pill-pick{--agent:var(--muted);position:relative;display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--bg2);border-radius:999px;padding:5px 12px 5px 10px;cursor:pointer;user-select:none}
+.pill-pick input{position:absolute;opacity:0;width:0;height:0}
+.pill-pick:has(input:checked){border-color:var(--agent);background:color-mix(in srgb,var(--agent) 15%,var(--bg2))}
+.pill-pick:has(input:focus-visible){outline:2px solid var(--link);outline-offset:1px}
+.pill-pick.off{opacity:.5;cursor:not-allowed}
+.tag{font-size:10.5px;border:1px solid var(--line);border-radius:6px;padding:0 5px;color:var(--muted)}
+.tag.warn{color:var(--warn);border-color:rgba(210,153,34,.5)}
+.cols{display:grid;gap:12px 18px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+.stage{display:grid;gap:8px;grid-template-columns:auto minmax(0,1fr) minmax(0,1fr) auto;align-items:start;border:1px solid var(--line2);background:var(--bg2);border-radius:10px;padding:8px 10px;margin-bottom:8px}
+.stage .num{width:24px;height:24px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);display:grid;place-items:center;font-size:12px;font-weight:700;margin-top:3px}
+.stage textarea{grid-column:2/-1}
+.stage .acts{display:flex;gap:4px}
+.formerr{color:#ffa198;font-size:13px}
+
+.formbar{position:sticky;bottom:0;z-index:15;padding:10px 0 4px;background:linear-gradient(to top,var(--bg) 72%,transparent)}
+.run-head{position:sticky;top:var(--top-h,56px);z-index:20;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;margin-bottom:10px;padding:8px 0;background:var(--bg);border-bottom:1px solid var(--line2)}
+.run-head h2{margin:0;font-size:17px}
+.run-task{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px 12px;margin-bottom:12px;color:var(--muted)}
+.run-task summary{cursor:pointer;color:var(--text)}
+.run-task pre{white-space:pre-wrap;margin:8px 0 0;font:13px/1.45 var(--mono);color:var(--text)}
+.sec{margin-bottom:14px}
+.sec>h3{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.stack{display:grid;gap:22px}
+.fan{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));align-items:start}
+.step{--agent:var(--muted);position:relative;border:1px solid var(--line);border-left:4px solid var(--agent);border-radius:10px;background:var(--panel);min-width:0}
+.step.running{box-shadow:0 0 0 1px color-mix(in srgb,var(--agent) 45%,transparent),0 0 22px -10px var(--agent)}
+.stack>.step:not(:first-child)::before{content:"▼";position:absolute;left:18px;top:-19px;font-size:11px;color:var(--muted)}
+.step-h{display:flex;gap:8px;align-items:center;padding:8px 10px;cursor:pointer;user-select:none}
+.step-h .t{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.step-h .time{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.step-b{border-top:1px solid var(--line2);padding:10px 12px;max-height:440px;overflow:auto}
+.step.collapsed .step-b{display:none}
+.step-err{color:#ffa198;font-size:13px;margin:0 0 8px;white-space:pre-wrap}
+.live{margin:0;white-space:pre-wrap;word-break:break-word;font:12.5px/1.45 var(--mono);color:#c9d1d9}
+.wait{color:var(--muted);margin:0}
+.result{border:1px solid rgba(63,185,80,.45);border-top:3px solid var(--ok);background:var(--panel);border-radius:12px;padding:12px 14px;margin-top:14px;scroll-margin-top:calc(var(--top-h,56px) + 64px)}
+.result-h{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;margin-bottom:8px}
+.result-h h3{margin:0;font-size:15px}
+.result-body{max-height:62vh;overflow:auto;padding-right:6px}
+
+.hlist{display:grid;gap:8px}
+.hrow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 14px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:10px 12px}
+.hrow .what{min-width:0}
+.hrow .what b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hrow .meta{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;color:var(--muted);font-size:12.5px}
+.hrow .acts{display:flex;gap:6px}
+@media (max-width:640px){.hrow{grid-template-columns:minmax(0,1fr)}}
+
+/* markdown */
+.md{line-height:1.55;overflow-wrap:anywhere}
+.md>:first-child{margin-top:0}
+.md>:last-child{margin-bottom:0}
+.md p{margin:.6em 0;white-space:pre-wrap}
+.md h3,.md h4,.md h5,.md h6{margin:1em 0 .4em;line-height:1.25}
+.md h3{font-size:1.2em}.md h4{font-size:1.08em}.md h5,.md h6{font-size:1em}
+.md ul,.md ol{margin:.5em 0;padding-left:1.4em}
+.md li{margin:.15em 0;white-space:pre-wrap}
+.md li.l1{margin-left:1.2em}.md li.l2{margin-left:2.4em}
+.md code{font:.9em var(--mono);background:rgba(110,118,129,.25);padding:.1em .35em;border-radius:5px}
+.md pre.code{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;overflow:auto;margin:.7em 0}
+.md pre.code code{background:none;padding:0;font-size:12.5px;white-space:pre}
+.md blockquote{margin:.6em 0;padding:.1em .9em;border-left:3px solid var(--line);color:var(--muted)}
+.md table{border-collapse:collapse;margin:.7em 0;display:block;overflow:auto;max-width:100%}
+.md th,.md td{border:1px solid var(--line);padding:4px 10px;text-align:left}
+.md th{background:var(--panel2)}
+.md hr{border:0;border-top:1px solid var(--line);margin:1em 0}
+
+/* avisos e dialogo */
+.toasts{position:fixed;right:14px;bottom:calc(var(--dock-h,0px) + 14px);z-index:60;display:grid;gap:8px;width:min(92vw,440px);pointer-events:none}
+.toast{pointer-events:auto;display:flex;gap:10px;align-items:flex-start;background:var(--panel2);border:1px solid var(--line);border-left:4px solid var(--info);border-radius:8px;padding:8px 10px;box-shadow:0 8px 24px rgba(1,4,9,.6);overflow-wrap:anywhere}
+.toast.ok{border-left-color:var(--ok)}
+.toast.warn{border-left-color:var(--warn)}
+.toast.error{border-left-color:var(--bad)}
+.toast .x{margin-left:auto;background:none;border:0;cursor:pointer;color:var(--muted);font-size:16px;line-height:1}
+dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:0;width:min(560px,94vw);box-shadow:0 20px 60px rgba(1,4,9,.8)}
+dialog::backdrop{background:rgba(1,4,9,.7)}
+.dlg-h{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+.dlg-h h2{margin:0;font-size:16px}
+.dlg-path{font:12.5px var(--mono);color:var(--muted);padding:8px 14px;border-bottom:1px solid var(--line2);overflow-wrap:anywhere}
+.dlg-list{display:grid;max-height:46vh;overflow:auto;padding:6px}
+.dlg-list button{display:flex;gap:8px;align-items:center;text-align:left;background:none;border:0;border-radius:8px;padding:8px 10px;cursor:pointer}
+.dlg-list button:hover{background:var(--panel2)}
+.dlg-f{display:flex;justify-content:flex-end;gap:8px;padding:12px 14px;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><span class="logo"><i>&gt;_</i></span><span>Termux AI</span><span class="sub">Painel</span></div>
+    <nav class="tabs" role="tablist" aria-label="Seções">
+      <button type="button" class="tab" role="tab" data-tab="agents" aria-selected="true">Agentes <span class="count" id="count-agents">0</span></button>
+      <button type="button" class="tab" role="tab" data-tab="orch" aria-selected="false">Orquestrar <span class="count" id="count-orch" hidden>0</span></button>
+      <button type="button" class="tab" role="tab" data-tab="history" aria-selected="false">Histórico</button>
+    </nav>
+    <div class="meters" id="meters"></div>
+  </div>
+</header>
+<main>
+  <section id="view-agents" class="view on" role="tabpanel" aria-label="Agentes">
+    <div id="banner" class="banner bad" hidden></div>
+    <div class="bar">
+      <div class="launch" id="launch" aria-label="Abrir agente"></div>
+      <button type="button" class="btn dirbtn" id="dir-btn" title="Pasta de trabalho dos novos agentes"></button>
+      <span class="grow"></span>
+      <div class="seg" role="group" aria-label="Layout">
+        <button type="button" id="lay-grid" aria-pressed="true">▦ Grade</button>
+        <button type="button" id="lay-focus" aria-pressed="false">◧ Foco</button>
+      </div>
+      <div class="seg" role="group" aria-label="Exibição">
+        <button type="button" id="view-live" aria-pressed="true" title="Terminais interativos em tempo real">Ao vivo</button>
+        <button type="button" id="view-preview" aria-pressed="false" title="Mostra só as últimas linhas (mais leve)">Prévia</button>
+      </div>
+    </div>
+    <div id="empty" class="empty" hidden>
+      <h2>Nenhum agente aberto ainda</h2>
+      <p>Abra vários agentes lado a lado com os botões acima, escreva um prompt uma única vez e envie para todos ao mesmo tempo.</p>
+      <p>Prefere deixar os agentes trabalharem juntos? Use a aba <b>Orquestrar</b>: comparar com um juiz, encadear planejar → implementar → revisar, ou deixar um maestro dividir a tarefa. Tudo em modo somente leitura.</p>
+    </div>
+    <div id="cards" class="cards"></div>
+    <form id="dock" class="dock" autocomplete="off">
+      <div class="dock-in">
+        <div class="dock-meta">
+          <span class="targets" id="targets"></span>
+          <button type="button" class="btn link sm" id="sel-all">Todos</button>
+          <button type="button" class="btn link sm" id="sel-none">Nenhum</button>
+          <span class="grow"></span>
+          <select id="templates" aria-label="Modelos de prompt"></select>
+        </div>
+        <div class="dock-row">
+          <textarea id="dock-text" rows="2" placeholder="Escreva um prompt para os agentes selecionados… (Ctrl+Enter envia)"></textarea>
+          <div class="dock-actions">
+            <button type="submit" class="btn primary" id="dock-send">Enviar ➤</button>
+            <button type="button" class="btn sm" id="dock-paste" title="Cola o texto no terminal sem apertar Enter">Colar sem Enter</button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section id="view-orch" class="view" role="tabpanel" aria-label="Orquestrar">
+    <div id="orch-form"></div>
+    <div id="orch-run" hidden></div>
+  </section>
+
+  <section id="view-history" class="view" role="tabpanel" aria-label="Histórico">
+    <div id="history"></div>
+  </section>
+</main>
+<div id="toasts" class="toasts" aria-live="polite"></div>
+<dialog id="dirs" aria-labelledby="dirs-title">
+  <div class="dlg-h"><h2 id="dirs-title">Pasta de trabalho</h2><span class="grow"></span><button type="button" class="btn sm icon" id="dirs-close" aria-label="Fechar">✕</button></div>
+  <div class="dlg-path" id="dirs-path"></div>
+  <div class="dlg-list" id="dirs-list"></div>
+  <div class="dlg-f"><button type="button" class="btn" id="dirs-up">⬆ Subir</button><span class="grow"></span><button type="button" class="btn primary" id="dirs-ok">Usar esta pasta</button></div>
+</dialog>
+<noscript><p class="empty">Ative o JavaScript para usar o painel.</p></noscript>
+<script nonce="__NONCE__">
+'use strict';
+(() => {
+const $ = (selector, root = document) => root.querySelector(selector);
+
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(props ?? {})) {
+    if (value === null || value === undefined || value === false) continue;
+    if (key === 'class') el.className = value;
+    else if (key === 'text') el.textContent = value;
+    else if (key === 'on') for (const [event, handler] of Object.entries(value)) el.addEventListener(event, handler);
+    else if (key === 'vars') for (const [name, val] of Object.entries(value)) el.style.setProperty(name, val);
+    else if (key === 'data') Object.assign(el.dataset, value);
+    else if (key in el && typeof value !== 'object') el[key] = value;
+    else el.setAttribute(key, value === true ? '' : String(value));
+  }
+  for (const kid of kids.flat(Infinity)) if (kid !== null && kid !== undefined && kid !== false) el.append(kid);
+  return el;
+}
+
+const store = {
+  get(key, fallback) {
+    try {
+      const raw = localStorage.getItem(`termuxai.${key}`);
+      return raw === null ? fallback : JSON.parse(raw);
+    } catch {
+      return fallback;
+    }
+  },
+  set(key, value) {
+    try {
+      localStorage.setItem(`termuxai.${key}`, JSON.stringify(value));
+    } catch {
+      // sem armazenamento local: as preferencias valem so ate recarregar
+    }
+  },
+};
+
+const S = {
+  state: null,
+  agents: [],
+  sessions: [],
+  online: true,
+  tab: 'agents',
+  layout: store.get('layout', 'grid') === 'focus' ? 'focus' : 'grid',
+  live: store.get('live', true) !== false,
+  dir: store.get('dir', ''),
+  focus: null,
+  selected: new Set(),
+  known: new Set(),
+  previews: {},
+  runs: [],
+  skew: 0,
+  away: false,
+};
+
+/* ---------- API ---------- */
+class ApiError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function api(method, path, body) {
+  let res;
+  try {
+    res = await fetch(path, {
+      method,
+      cache: 'no-store',
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    setOnline(false);
+    throw new ApiError(0, 'Sem conexão com o painel');
+  }
+  setOnline(true);
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  if (!res.ok) throw new ApiError(res.status, data?.error || `Erro ${res.status}`);
+  return data;
+}
+
+function setOnline(value) {
+  if (S.online === value) return;
+  S.online = value;
+  renderHeader();
+}
+
+function toast(message, kind = 'info', ms = 4500) {
+  const box = $('#toasts');
+  const el = h('div', { class: `toast ${kind}`, role: 'status' }, h('span', { text: message }), h('button', { type: 'button', class: 'x', 'aria-label': 'Fechar', text: '×', on: { click: () => el.remove() } }));
+  box.append(el);
+  while (box.children.length > 4) box.firstElementChild.remove();
+  if (ms) setTimeout(() => el.remove(), ms);
+}
+const fail = (error) => toast(error?.message || String(error), 'error', 7000);
+
+/* ---------- formatacao ---------- */
+const pad = (n) => String(n).padStart(2, '0');
+function fmtDur(ms) {
+  const total = Math.max(0, Math.round(ms / 1000));
+  if (total < 60) return `${total} s`;
+  const minutes = Math.floor(total / 60);
+  if (minutes < 60) return `${minutes} min ${pad(total % 60)} s`;
+  return `${Math.floor(minutes / 60)} h ${pad(minutes % 60)} min`;
+}
+function fmtDate(ts) {
+  const d = new Date(ts);
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+const fmtMb = (mb) => (mb >= 1024 ? `${(mb / 1024).toFixed(1).replace('.', ',')} GB` : `${mb} MB`);
+const baseName = (p) => String(p).split(/[\\/]/).filter(Boolean).pop() || String(p);
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+const nowMs = () => Date.now() + S.skew;
+
+/* ---------- agentes ---------- */
+const FALLBACK_AGENT = { id: '?', label: 'Agente', short: 'Agente', color: '#8b949e', installed: false, orchestrable: false, reads: false, guard: '', note: '', login: '' };
+const agentOf = (id) => S.agents.find((agent) => agent.id === id) ?? { ...FALLBACK_AGENT, id, label: id, short: id };
+const seqOf = (name) => Number(/-(\d+)$/.exec(name)?.[1] ?? 0);
+const sessionLabel = (session) => `${agentOf(session.agent).short} #${seqOf(session.name)}`;
+const isReady = (id) => {
+  const agent = S.agents.find((item) => item.id === id);
+  return Boolean(agent?.installed && agent.orchestrable);
+};
+const readyAgents = () => S.agents.filter((agent) => agent.installed && agent.orchestrable);
+
+function installHint(agent) {
+  if (agent.id === 'hermes') return 'O Hermes é opcional. No Termux, rode: ia atualizar hermes (cerca de 2,2 GB e alguns minutos).';
+  return `${agent.label} não está instalado neste Linux. No Termux, rode: ia atualizar`;
+}
+
+/* ---------- markdown seguro: monta nos DOM, nunca HTML ---------- */
+const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\(https?:\/\/[^\s)]+\)|https?:\/\/[^\s<>"')\]]+)/g;
+const FENCE = /^(\s*)(`{3,}|~{3,})\s*([\w+#.-]*)\s*$/;
+const HEADING = /^(#{1,4})\s+(.*)$/;
+const RULE = /^\s*([-*_])(\s*\1){2,}\s*$/;
+const ITEM = /^(\s*)([-*•]|\d+[.)])\s+(.*)$/;
+const QUOTE = /^\s*>\s?(.*)$/;
+const TABLE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+
+const anchor = (href, label) => h('a', { href, text: label, target: '_blank', rel: 'noopener noreferrer' });
+
+function inline(text) {
+  const out = [];
+  let last = 0;
+  for (const match of text.matchAll(INLINE)) {
+    const token = match[0];
+    if (match.index > last) out.push(text.slice(last, match.index));
+    if (token.startsWith('`')) out.push(h('code', { text: token.slice(1, -1) }));
+    else if (token.startsWith('**')) out.push(h('strong', { text: token.slice(2, -2) }));
+    else if (token.startsWith('[')) {
+      const split = token.indexOf('](');
+      out.push(anchor(token.slice(split + 2, -1), token.slice(1, split)));
+    } else {
+      const clean = token.replace(/[.,;:!?]+$/, '');
+      out.push(anchor(clean, clean));
+      if (clean.length < token.length) out.push(token.slice(clean.length));
+    }
+    last = match.index + token.length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
+function startsBlock(line, next) {
+  return FENCE.test(line) || HEADING.test(line) || RULE.test(line) || ITEM.test(line) || QUOTE.test(line) || (line.includes('|') && TABLE_SEP.test(next ?? ''));
+}
+
+function md(source) {
+  const root = h('div', { class: 'md' });
+  const lines = String(source ?? '').replace(/\r\n?/g, '\n').split('\n');
+  const cells = (line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    let m;
+    if (/^\s*$/.test(line)) {
+      i += 1;
+    } else if ((m = FENCE.exec(line))) {
+      const body = [];
+      i += 1;
+      while (i < lines.length && !lines[i].trimStart().startsWith(m[2])) body.push(lines[i++]);
+      i += 1;
+      root.append(h('pre', { class: 'code' }, h('code', { text: body.join('\n') })));
+    } else if ((m = HEADING.exec(line))) {
+      root.append(h(`h${m[1].length + 2}`, null, inline(m[2])));
+      i += 1;
+    } else if (RULE.test(line)) {
+      root.append(h('hr'));
+      i += 1;
+    } else if (line.includes('|') && TABLE_SEP.test(lines[i + 1] ?? '')) {
+      const head = cells(line);
+      const rows = [];
+      i += 2;
+      while (i < lines.length && lines[i].includes('|')) rows.push(cells(lines[i++]));
+      root.append(
+        h('table', null,
+          h('thead', null, h('tr', null, head.map((cell) => h('th', null, inline(cell))))),
+          h('tbody', null, rows.map((row) => h('tr', null, row.map((cell) => h('td', null, inline(cell))))))),
+      );
+    } else if (QUOTE.test(line)) {
+      const quoted = [];
+      while (i < lines.length && (m = QUOTE.exec(lines[i]))) {
+        quoted.push(m[1]);
+        i += 1;
+      }
+      root.append(h('blockquote', null, h('p', null, inline(quoted.join('\n')))));
+    } else if (ITEM.test(line)) {
+      const items = [];
+      while (i < lines.length) {
+        const found = ITEM.exec(lines[i]);
+        if (found) items.push({ level: Math.min(2, Math.floor(found[1].replace(/\t/g, '  ').length / 2)), text: found[3] });
+        else if (items.length && /^\s{2,}\S/.test(lines[i]) && !startsBlock(lines[i], lines[i + 1])) items.at(-1).text += `\n${lines[i].trim()}`;
+        else break;
+        i += 1;
+      }
+      const list = h(/^\s*\d/.test(line) ? 'ol' : 'ul', null, items.map((entry) => h('li', { class: entry.level ? `l${entry.level}` : null }, inline(entry.text))));
+      root.append(list);
+    } else {
+      const para = [line];
+      i += 1;
+      while (i < lines.length && !/^\s*$/.test(lines[i]) && !startsBlock(lines[i], lines[i + 1])) para.push(lines[i++]);
+      root.append(h('p', null, inline(para.join('\n'))));
+    }
+  }
+  return root;
+}
+
+/* ---------- utilidades de interface ---------- */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const area = h('textarea', { class: 'offscreen', value: text, readOnly: true, 'aria-hidden': 'true' });
+    document.body.append(area);
+    area.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch {
+      ok = false;
+    }
+    area.remove();
+    return ok;
+  }
+}
+
+async function copyWithToast(text, what) {
+  toast((await copyText(text)) ? `${what} copiado.` : 'Não foi possível copiar. Selecione o texto e copie manualmente.', 'info', 2500);
+}
+
+function download(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
+  const link = h('a', { href: url, download: name, class: 'offscreen' });
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function confirmButton({ label, armedLabel, title, className = 'btn sm icon danger', onConfirm }) {
+  let timer = 0;
+  const button = h('button', {
+    type: 'button',
+    class: className,
+    title,
+    'aria-label': title,
+    text: label,
+    on: {
+      click: (event) => {
+        event.stopPropagation();
+        if (button.classList.contains('armed')) {
+          clearTimeout(timer);
+          button.classList.remove('armed');
+          button.textContent = label;
+          onConfirm();
+          return;
+        }
+        button.classList.add('armed');
+        button.textContent = armedLabel;
+        timer = setTimeout(() => {
+          button.classList.remove('armed');
+          button.textContent = label;
+        }, 3000);
+      },
+    },
+  });
+  return button;
+}
+
+/* ---------- cabecalho ---------- */
+let headerSig = '';
+function renderHeader() {
+  const st = S.state;
+  const pills = [[S.online ? 'pill ok' : 'pill bad', S.online ? 'Conectado' : 'Sem conexão', '', true]];
+  if (st) {
+    pills.push(['pill', `▦ ${S.sessions.length}/${st.limits.maxSessions} sessões`, 'Sessões abertas e o limite configurado', false]);
+    if (st.mem.totalMb > 0) {
+      const level = st.mem.availableMb < st.limits.minFreeMb ? ' bad' : st.mem.availableMb < st.limits.minFreeMb * 2 ? ' warn' : '';
+      pills.push([`pill${level}`, `RAM livre ${fmtMb(st.mem.availableMb)}`, `Memória disponível de ${fmtMb(st.mem.totalMb)}. Abaixo de ${fmtMb(st.limits.minFreeMb)} o painel recusa novas sessões.`, false]);
+    }
+    if (st.version && st.version !== 'dev') pills.push(['pill', `v${st.version}`, '', false]);
+  }
+  const active = S.runs.filter((run) => run.status === 'running').length;
+  const sig = JSON.stringify([pills, S.sessions.length, active]);
+  if (sig === headerSig) return;
+  headerSig = sig;
+  $('#meters').replaceChildren(...pills.map(([cls, text, tip, led]) => h('span', { class: cls, title: tip || null }, led ? h('i', { class: 'led' }) : null, text)));
+  $('#count-agents').textContent = String(S.sessions.length);
+  $('#count-orch').hidden = active === 0;
+  $('#count-orch').textContent = String(active);
+}
+
+function renderBanner() {
+  const banner = $('#banner');
+  let message = '';
+  if (S.state && !S.state.tmux) message = 'O tmux não está instalado neste Linux, então não dá para abrir sessões de agentes. No Termux, rode: ia atualizar';
+  else if (S.state?.tmuxError) message = S.state.tmuxError;
+  banner.hidden = !message;
+  banner.textContent = message;
+}
+
+function updateTitle() {
+  const parts = [];
+  const working = S.sessions.filter((session) => session.state === 'working').length;
+  if (working) parts.push(`${working} trabalhando`);
+  const running = S.runs.filter((run) => run.status === 'running').length;
+  if (running) parts.push(`${running} orquestrando`);
+  document.title = `${parts.length ? `● ${parts.join(' · ')} · ` : ''}Termux AI · Painel`;
+}
+
+/* ---------- lancadores e pasta ---------- */
+let launcherSig = '';
+function renderLauncher() {
+  const limits = S.state?.limits;
+  const full = Boolean(limits) && S.sessions.length >= limits.maxSessions;
+  const noTmux = Boolean(S.state) && !S.state.tmux;
+  const sig = `${S.agents.map((agent) => `${agent.id}${agent.installed ? 1 : 0}`).join('|')}|${full ? 1 : 0}|${noTmux ? 1 : 0}`;
+  if (sig === launcherSig) return;
+  launcherSig = sig;
+  $('#launch').replaceChildren(
+    ...S.agents.map((agent) => {
+      const off = !agent.installed || full || noTmux;
+      const title = !agent.installed ? installHint(agent)
+        : noTmux ? 'O tmux não está instalado neste Linux. No Termux, rode: ia atualizar'
+          : full ? `Limite de ${limits.maxSessions} sessões atingido. Encerre alguma antes.`
+            : [`Abrir ${agent.label}`, agent.note].filter(Boolean).join('\n');
+      return h('button', { type: 'button', class: `chip-btn${off ? ' off' : ''}`, vars: { '--agent': agent.color }, title, 'aria-disabled': off ? 'true' : null, on: { click: () => openSession(agent.id) } },
+        h('span', { class: 'plus', text: '+' }), agent.short, !agent.installed && agent.id === 'hermes' ? h('small', { text: 'opcional' }) : null);
+    }),
+  );
+}
+
+const within = (dir, root) => dir === root || dir.startsWith(root.endsWith('/') || root.endsWith('\\') ? root : `${root}${root.includes('\\') ? '\\' : '/'}`);
+
+function renderDir() {
+  const dir = S.dir || S.state?.root || '';
+  $('#dir-btn').textContent = `📁 ${dir ? baseName(dir) : '…'}`;
+  $('#dir-btn').title = `Pasta de trabalho dos novos agentes e das execuções:\n${dir}`;
+  orchDirChanged();
+}
+
+function wireDirDialog() {
+  const dlg = $('#dirs');
+  let data = null;
+  async function load(path, retry = true) {
+    try {
+      data = await api('GET', `api/dirs?path=${encodeURIComponent(path || '')}`);
+    } catch (error) {
+      if (!data && retry) return load('', false);
+      fail(error);
+      if (!data) dlg.close();
+      return;
+    }
+    const rest = data.path.slice(data.root.length).replace(/^[\\/]/, '');
+    $('#dirs-path').textContent = rest ? `⌂ ${data.root} ▸ ${rest}` : `⌂ ${data.root}`;
+    $('#dirs-up').disabled = !data.parent;
+    $('#dirs-list').replaceChildren(
+      ...(data.entries.length ? data.entries.map((entry) => h('button', { type: 'button', on: { click: () => load(entry.path) } }, '📁', entry.name)) : [h('p', { class: 'muted', text: 'Nenhuma subpasta aqui.' })]),
+    );
+  }
+  $('#dir-btn').addEventListener('click', () => {
+    data = null;
+    dlg.showModal();
+    load(S.dir);
+  });
+  $('#dirs-up').addEventListener('click', () => data?.parent && load(data.parent));
+  $('#dirs-close').addEventListener('click', () => dlg.close());
+  dlg.addEventListener('click', (event) => {
+    if (event.target === dlg) dlg.close();
+  });
+  $('#dirs-ok').addEventListener('click', () => {
+    if (data) {
+      S.dir = data.path;
+      store.set('dir', S.dir);
+      renderDir();
+    }
+    dlg.close();
+  });
+}
+
+/* ---------- cartoes de agentes ---------- */
+const cards = new Map();
+const KEYS_MAIN = [['Esc', 'Escape'], ['^C', 'C-c', 'Ctrl+C'], ['↑', 'Up'], ['↓', 'Down'], ['Tab', 'Tab'], ['Enter', 'Enter'], ['y', 'y'], ['n', 'n']];
+const KEYS_MORE = [['←', 'Left'], ['→', 'Right'], ['⇧Tab', 'S-Tab', 'Shift+Tab'], ['1', '1'], ['2', '2'], ['3', '3']];
+
+// Terminais so ficam conectados com a aba visivel: esconder um iframe com ttyd redimensionaria o tmux.
+const wantLive = (session) => !session.dead && S.live && S.tab === 'agents' && !S.away && (S.layout === 'grid' || S.focus === session.name);
+const loops = {};
+
+async function sendKey(name, key) {
+  try {
+    await api('POST', `api/sessions/${name}/key`, { key });
+    kickPreviews();
+  } catch (error) {
+    fail(error);
+  }
+}
+
+function makeCard(initial) {
+  const name = initial.name;
+  let session = initial;
+  let mode = null;
+  let frame = null;
+  let pre = null;
+
+  const railFocus = () => {
+    if (S.layout === 'focus' && S.focus !== name) setFocus(name);
+  };
+  const pick = h('input', {
+    type: 'checkbox',
+    'aria-label': `Selecionar ${name} para o envio em grupo`,
+    on: {
+      change: () => {
+        if (pick.checked) S.selected.add(name);
+        else S.selected.delete(name);
+        renderTargets();
+      },
+    },
+  });
+  const title = h('strong', { class: 'card-title' });
+  const chip = h('span', { class: 'chip' });
+  const dir = h('span', { class: 'dir' });
+  const focusButton = h('button', { type: 'button', class: 'btn sm icon', title: 'Ampliar ou voltar para a grade', 'aria-label': 'Ampliar', text: '⤢', on: { click: (event) => { event.stopPropagation(); toggleFocus(name); } } });
+  const killButton = confirmButton({ label: '✕', armedLabel: 'Encerrar?', title: 'Encerrar esta sessão', onConfirm: () => closeSession(name) });
+  const head = h('header', { class: 'card-head', on: { click: (event) => { if (!event.target.closest('button,label,input')) railFocus(); } } },
+    h('label', { class: 'pick' }, pick), h('i', { class: 'dot' }), title, chip, dir, h('span', { class: 'grow' }), focusButton, killButton);
+
+  const revive = h('button', { type: 'button', class: 'btn primary revive', text: '↻ Reiniciar', hidden: true, on: { click: (event) => { event.stopPropagation(); restartSession(name); } } });
+  const body = h('div', { class: 'card-body', on: { click: railFocus } }, revive);
+
+  const keyButton = ([label, key, tip]) => h('button', { type: 'button', class: 'btn sm', text: label, title: `Enviar ${tip ?? label}`, on: { click: () => sendKey(name, key) } });
+  const extra = KEYS_MORE.map(keyButton);
+  extra.forEach((button) => {
+    button.hidden = true;
+  });
+  const more = h('button', {
+    type: 'button',
+    class: 'btn sm more',
+    text: '⋯',
+    title: 'Mais teclas',
+    'aria-expanded': 'false',
+    on: {
+      click: () => {
+        const open = more.getAttribute('aria-expanded') !== 'true';
+        more.setAttribute('aria-expanded', String(open));
+        extra.forEach((button) => {
+          button.hidden = !open;
+        });
+      },
+    },
+  });
+  const keys = h('footer', { class: 'keys' }, KEYS_MAIN.map(keyButton), extra, more);
+  const root = h('article', { class: 'card', data: { name } }, head, body, keys);
+
+  function setPreview(lines) {
+    if (!pre) return;
+    const text = lines.join('\n');
+    if (pre.textContent === text) return;
+    const stick = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
+    pre.textContent = text;
+    if (stick) pre.scrollTop = pre.scrollHeight;
+  }
+
+  function sync() {
+    const live = wantLive(session);
+    if (live && mode !== 'live') {
+      pre?.remove();
+      pre = null;
+      frame = h('iframe', { src: `t/?arg=${encodeURIComponent(name)}`, title: `Terminal de ${sessionLabel(session)}`, allow: 'clipboard-read; clipboard-write' });
+      body.prepend(frame);
+      mode = 'live';
+    } else if (!live && mode !== 'preview') {
+      frame?.remove();
+      frame = null;
+      pre = h('pre', { class: 'preview', tabindex: '0', 'aria-label': `Prévia de ${sessionLabel(session)}` });
+      body.prepend(pre);
+      mode = 'preview';
+      if (S.previews[name]) setPreview(S.previews[name]);
+      else kickPreviews();
+    }
+  }
+
+  function update(next) {
+    session = next;
+    root.style.setProperty('--agent', agentOf(next.agent).color);
+    title.textContent = sessionLabel(next);
+    chip.className = `chip ${next.state}`;
+    chip.textContent = next.state === 'working' ? 'trabalhando' : next.state === 'idle' ? 'aguardando' : next.exitStatus === null ? 'encerrado' : `encerrado · código ${next.exitStatus}`;
+    chip.title = next.dead ? 'O programa terminou. Use Reiniciar para abrir de novo.' : 'Trabalhando = houve saída no terminal nos últimos segundos';
+    dir.textContent = baseName(next.dir);
+    dir.title = next.dir;
+    root.classList.toggle('working', next.state === 'working');
+    root.classList.toggle('dead', next.dead);
+    revive.hidden = !next.dead;
+    pick.disabled = next.dead;
+    pick.checked = !next.dead && S.selected.has(name);
+    sync();
+  }
+
+  return {
+    root,
+    update,
+    sync,
+    setPreview,
+    isPreview: () => mode === 'preview',
+    setFocused: (value) => root.classList.toggle('focused', value),
+    destroy: () => {
+      frame?.remove();
+      root.remove();
+    },
+  };
+}
+
+function reconcileCards() {
+  const names = new Set(S.sessions.map((session) => session.name));
+  for (const [name, card] of cards) {
+    if (names.has(name)) continue;
+    card.destroy();
+    cards.delete(name);
+    S.selected.delete(name);
+    S.known.delete(name);
+  }
+  for (const session of S.sessions) {
+    if (!S.known.has(session.name)) {
+      S.known.add(session.name);
+      S.selected.add(session.name);
+    }
+    let card = cards.get(session.name);
+    if (!card) {
+      card = makeCard(session);
+      cards.set(session.name, card);
+      $('#cards').append(card.root);
+    }
+    card.update(session);
+  }
+  if (!cards.has(S.focus)) S.focus = S.sessions[0]?.name ?? null;
+  applyLayout();
+  $('#empty').hidden = cards.size > 0;
+  renderTargets();
+}
+
+function applyLayout() {
+  const focusMode = S.layout === 'focus' && cards.size > 1;
+  $('#cards').classList.toggle('focus', focusMode);
+  for (const [name, card] of cards) card.setFocused(focusMode && S.focus === name);
+  for (const card of cards.values()) card.sync();
+  $('#lay-grid').setAttribute('aria-pressed', String(S.layout === 'grid'));
+  $('#lay-focus').setAttribute('aria-pressed', String(S.layout === 'focus'));
+  $('#view-live').setAttribute('aria-pressed', String(S.live));
+  $('#view-preview').setAttribute('aria-pressed', String(!S.live));
+}
+
+function setLayout(layout) {
+  S.layout = layout;
+  if (layout === 'focus' && !cards.has(S.focus)) S.focus = S.sessions[0]?.name ?? null;
+  store.set('layout', layout);
+  applyLayout();
+}
+
+function setFocus(name) {
+  S.focus = name;
+  S.layout = 'focus';
+  store.set('layout', 'focus');
+  applyLayout();
+}
+
+function toggleFocus(name) {
+  if (S.layout === 'focus' && S.focus === name) setLayout('grid');
+  else setFocus(name);
+}
+
+async function openSession(agentId) {
+  const agent = agentOf(agentId);
+  if (!agent.installed) return toast(installHint(agent), 'warn', 9000);
+  if (S.state && !S.state.tmux) return toast('O tmux não está instalado neste Linux. No Termux, rode: ia atualizar', 'warn', 9000);
+  const limit = S.state?.limits.maxSessions;
+  if (limit && S.sessions.length >= limit) return toast(`Limite de ${limit} sessões atingido. Encerre alguma antes.`, 'warn');
+  try {
+    const session = await api('POST', 'api/sessions', { agent: agentId, dir: S.dir || undefined });
+    S.known.add(session.name);
+    S.selected.add(session.name);
+    if (S.layout === 'focus') S.focus = session.name;
+    await refreshState();
+    toast(`${sessionLabel(session)} aberto em ${baseName(session.dir)}.`, 'ok', 2500);
+  } catch (error) {
+    fail(error);
+  }
+}
+
+async function closeSession(name) {
+  try {
+    await api('DELETE', `api/sessions/${name}`);
+  } catch (error) {
+    fail(error);
+  }
+  await refreshState().catch(() => {});
+}
+
+async function restartSession(name) {
+  try {
+    await api('POST', `api/sessions/${name}/restart`);
+  } catch (error) {
+    fail(error);
+  }
+  await refreshState().catch(() => {});
+}
+
+function kickPreviews() {
+  loops.previews?.kick(250);
+}
+
+async function refreshPreviews() {
+  if (S.tab !== 'agents' || ![...cards.values()].some((card) => card.isPreview())) return;
+  const data = await api('GET', 'api/previews?lines=40');
+  S.previews = data;
+  for (const [name, card] of cards) if (data[name]) card.setPreview(data[name]);
+}
+
+/* ---------- compositor (envio em grupo) ---------- */
+const TEMPLATES = [
+  ['Resumir o projeto', 'Resuma em poucos parágrafos o que este projeto faz, como as pastas estão organizadas e como rodar os testes.'],
+  ['Revisar mudanças', 'Revise as mudanças ainda não commitadas (git diff) e aponte bugs, riscos e melhorias, do mais grave ao mais leve.'],
+  ['Procurar bugs', 'Procure bugs prováveis e casos de borda sem tratamento no código deste projeto. Liste por gravidade, com arquivo e linha.'],
+  ['Sugerir testes', 'Quais testes estão faltando neste projeto? Proponha casos de teste concretos para os pontos mais arriscados.'],
+  ['Explicar o último commit', 'Explique o que o último commit mudou e por quê, e diga se enxerga algum risco.'],
+];
+
+function liveTargets() {
+  return S.sessions.filter((session) => S.selected.has(session.name) && !session.dead);
+}
+
+function renderTargets() {
+  const targets = liveTargets();
+  const alive = S.sessions.filter((session) => !session.dead).length;
+  let label = 'Nenhum agente selecionado';
+  if (targets.length) label = targets.length > 1 && targets.length === alive ? `Para todos os ${targets.length} agentes` : `Para: ${targets.map(sessionLabel).join(', ')}`;
+  $('#targets').textContent = label;
+  $('#dock-send').disabled = targets.length === 0;
+  $('#dock-paste').disabled = targets.length === 0;
+  $('#dock').hidden = S.sessions.length === 0;
+  for (const [name, card] of cards) {
+    const pick = card.root.querySelector('.pick input');
+    pick.checked = S.selected.has(name) && !pick.disabled;
+  }
+}
+
+let sending = false;
+
+async function broadcast(enter) {
+  if (sending) return;
+  const text = $('#dock-text').value;
+  const targets = liveTargets();
+  if (!text.trim()) return toast('Escreva o prompt antes de enviar.', 'warn', 2500);
+  if (!targets.length) return toast('Selecione pelo menos um agente aberto.', 'warn', 2500);
+  sending = true;
+  $('#dock-send').disabled = true;
+  $('#dock-paste').disabled = true;
+  try {
+    const { results } = await api('POST', 'api/broadcast', { names: targets.map((session) => session.name), text, enter });
+    const bad = results.filter((result) => !result.ok);
+    for (const item of bad) {
+      const session = S.sessions.find((candidate) => candidate.name === item.name);
+      toast(`${session ? sessionLabel(session) : item.name}: ${item.error}`, 'error', 7000);
+    }
+    if (bad.length < results.length) {
+      $('#dock-text').value = '';
+      toast(enter ? `Enviado para ${plural(results.length - bad.length, 'agente', 'agentes')}.` : 'Texto colado. Aperte Enter em cada terminal para enviar.', 'ok', 2500);
+      kickPreviews();
+    }
+  } catch (error) {
+    fail(error);
+  } finally {
+    sending = false;
+    renderTargets();
+  }
+}
+
+function wireDock() {
+  const select = $('#templates');
+  select.replaceChildren(h('option', { value: '', text: 'Modelos de prompt…' }), ...TEMPLATES.map(([label], index) => h('option', { value: String(index), text: label })));
+  select.addEventListener('change', () => {
+    const picked = TEMPLATES[Number(select.value)];
+    select.value = '';
+    if (!picked) return;
+    $('#dock-text').value = picked[1];
+    $('#dock-text').focus();
+  });
+  $('#dock').addEventListener('submit', (event) => {
+    event.preventDefault();
+    broadcast(true);
+  });
+  $('#dock-text').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      broadcast(true);
+    }
+  });
+  $('#dock-paste').addEventListener('click', () => broadcast(false));
+  $('#sel-all').addEventListener('click', () => {
+    S.sessions.forEach((session) => S.selected.add(session.name));
+    renderTargets();
+  });
+  $('#sel-none').addEventListener('click', () => {
+    S.selected.clear();
+    renderTargets();
+  });
+  $('#lay-grid').addEventListener('click', () => setLayout('grid'));
+  $('#lay-focus').addEventListener('click', () => setLayout('focus'));
+  $('#view-live').addEventListener('click', () => setLive(true));
+  $('#view-preview').addEventListener('click', () => setLive(false));
+}
+
+function setLive(value) {
+  S.live = value;
+  store.set('live', value);
+  applyLayout();
+}
+
+async function refreshState() {
+  const data = await api('GET', 'api/state');
+  S.state = data;
+  S.agents = data.agents;
+  S.sessions = data.sessions;
+  if (!S.dir || !within(S.dir, data.root)) S.dir = data.root;
+  renderHeader();
+  renderBanner();
+  renderLauncher();
+  renderDir();
+  reconcileCards();
+  updateTitle();
+  orchAgentsChanged();
+}
+
+/* ---------- orquestracao: formulario ---------- */
+const MODES = {
+  compare: { title: 'Comparar', blurb: 'Vários agentes respondem à mesma tarefa ao mesmo tempo e um juiz compara as respostas.' },
+  pipeline: { title: 'Pipeline', blurb: 'Linha de montagem: cada etapa recebe o resultado da anterior (planejar, propor, revisar).' },
+  maestro: { title: 'Maestro', blurb: 'Um coordenador divide a tarefa, os agentes cuidam das partes em paralelo e ele integra tudo.' },
+};
+const ROLE_LABEL = { plan: 'Planejar', implement: 'Propor implementação', review: 'Revisar', custom: 'Personalizada' };
+const RUN_STATUS = { running: 'em andamento', done: 'concluída', error: 'com erro', cancelled: 'cancelada' };
+const STEP_STATUS = { pending: 'aguardando', queued: 'na fila', running: 'executando', done: 'concluído', error: 'erro', cancelled: 'cancelado', skipped: 'ignorado' };
+const PREFERRED = ['claude', 'copilot', 'codex', 'agy', 'opencode'];
+const MAX_PICK = 6;
+
+const strings = (value) => (Array.isArray(value) ? value.filter((item) => typeof item === 'string') : []);
+const clampNum = (value, min, max, fallback) => Math.min(max, Math.max(min, Math.round(Number(value)) || fallback));
+const cleanStages = (raw) =>
+  (Array.isArray(raw) ? raw : []).slice(0, MAX_PICK).map((item) => ({
+    role: Object.hasOwn(ROLE_LABEL, item?.role) ? item.role : 'plan',
+    agent: typeof item?.agent === 'string' ? item.agent : '',
+    prompt: typeof item?.prompt === 'string' ? item.prompt : '',
+  }));
+const savedMode = store.get('orch.mode', 'compare');
+
+const O = {
+  mode: Object.hasOwn(MODES, savedMode) ? savedMode : 'compare',
+  agents: new Set(strings(store.get('orch.agents', []))),
+  judge: String(store.get('orch.judge', 'auto')),
+  stages: cleanStages(store.get('orch.stages', [])),
+  coordinator: String(store.get('orch.coordinator', '')),
+  workers: new Set(strings(store.get('orch.workers', []))),
+  maxTasks: clampNum(store.get('orch.maxTasks', 4), 1, 6, 4),
+  timeoutSec: clampNum(store.get('orch.timeoutSec', 600), 30, 1800, 600),
+  runId: null,
+  sig: '',
+};
+const orch = {};
+
+const chosen = (set) => S.agents.filter((agent) => set.has(agent.id)).map((agent) => agent.id);
+
+function persistOrch() {
+  store.set('orch.mode', O.mode);
+  store.set('orch.agents', [...O.agents]);
+  store.set('orch.judge', O.judge);
+  store.set('orch.stages', O.stages);
+  store.set('orch.coordinator', O.coordinator);
+  store.set('orch.workers', [...O.workers]);
+  store.set('orch.maxTasks', O.maxTasks);
+  store.set('orch.timeoutSec', O.timeoutSec);
+}
+
+// Ajusta as escolhas salvas aos agentes que existem agora; sem escolha, sugere os de melhor leitura.
+function seedOrch() {
+  const ready = readyAgents().map((agent) => agent.id);
+  if (!ready.length) return;
+  const reading = PREFERRED.filter((id) => ready.includes(id));
+  const pool = reading.length ? reading : ready;
+  const keep = (set) => new Set([...set].filter((id) => ready.includes(id)).slice(0, MAX_PICK));
+  O.agents = keep(O.agents);
+  if (!O.agents.size) O.agents = new Set(pool.slice(0, 3));
+  O.workers = keep(O.workers);
+  if (!O.workers.size) O.workers = new Set(pool.slice(0, 3));
+  if (!ready.includes(O.coordinator)) O.coordinator = pool[0];
+  if (O.judge !== 'none' && O.judge !== 'auto' && !ready.includes(O.judge)) O.judge = 'auto';
+  if (O.stages.length < 2) O.stages = ['plan', 'implement', 'review'].map((role, index) => ({ role, agent: pool[index % pool.length], prompt: '' }));
+  O.stages.forEach((stage, index) => {
+    if (!ready.includes(stage.agent)) stage.agent = pool[index % pool.length];
+  });
+}
+
+function field(label, control, hint, tag = 'div') {
+  return h(tag, { class: 'field' }, h('span', { text: label }), control, hint ? h('p', { class: 'hint', text: hint }) : null);
+}
+
+function agentSelect(value, onChange, lead = []) {
+  const select = h('select', null,
+    lead.map(([val, text]) => h('option', { value: val, text })),
+    S.agents.filter((agent) => agent.orchestrable).map((agent) => h('option', { value: agent.id, text: agent.installed ? agent.label : `${agent.label} (não instalado)`, disabled: !agent.installed })));
+  select.value = value;
+  select.addEventListener('change', () => onChange(select.value));
+  return select;
+}
+
+function pillGroup(selected, onChange) {
+  return h('div', { class: 'pills' }, S.agents.filter((agent) => agent.orchestrable).map((agent) => {
+    const input = h('input', {
+      type: 'checkbox',
+      checked: selected.has(agent.id),
+      disabled: !agent.installed,
+      on: {
+        change: () => {
+          if (input.checked) selected.add(agent.id);
+          else selected.delete(agent.id);
+          onChange();
+        },
+      },
+    });
+    return h('label', { class: `pill-pick${agent.installed ? '' : ' off'}`, vars: { '--agent': agent.color }, title: agent.installed ? agent.guard : installHint(agent) },
+      input, h('i', { class: 'dot' }), agent.short,
+      agent.installed ? null : h('span', { class: 'tag', text: 'não instalado' }),
+      agent.installed && agent.reads === false ? h('span', { class: 'tag warn', text: 'só web', title: agent.guard }) : null,
+      agent.installed && agent.note ? h('span', { class: 'tag warn', text: 'experimental', title: agent.note }) : null);
+  }));
+}
+
+function configCompare() {
+  const judgeBox = h('div');
+  const renderJudge = () => {
+    const first = chosen(O.agents)[0];
+    const lead = [['none', 'Sem juiz (só as respostas)'], ['auto', first ? `Automático (${agentOf(first).short})` : 'Automático']];
+    judgeBox.replaceChildren(field('Juiz', agentSelect(O.judge, (value) => { O.judge = value; persistOrch(); }, lead), 'O juiz lê todas as respostas, compara pontos fortes e fracos e entrega a resposta final.', 'label'));
+  };
+  renderJudge();
+  return [
+    field('Agentes (de 2 a 6)', pillGroup(O.agents, () => { persistOrch(); renderJudge(); }), 'Todos recebem exatamente a mesma tarefa e trabalham ao mesmo tempo.'),
+    judgeBox,
+  ];
+}
+
+function stageRow(stage, index, rerender) {
+  const roleSelect = h('select', { 'aria-label': `Papel da etapa ${index + 1}` }, Object.entries(ROLE_LABEL).map(([value, text]) => h('option', { value, text })));
+  roleSelect.value = stage.role;
+  roleSelect.addEventListener('change', () => {
+    stage.role = roleSelect.value;
+    persistOrch();
+    rerender();
+  });
+  const agentPick = agentSelect(stage.agent, (value) => { stage.agent = value; persistOrch(); });
+  agentPick.setAttribute('aria-label', `Agente da etapa ${index + 1}`);
+  const move = (delta) => {
+    const to = index + delta;
+    [O.stages[index], O.stages[to]] = [O.stages[to], O.stages[index]];
+    persistOrch();
+    rerender();
+  };
+  return h('div', { class: 'stage' },
+    h('span', { class: 'num', text: String(index + 1) }), roleSelect, agentPick,
+    h('div', { class: 'acts' },
+      h('button', { type: 'button', class: 'btn sm icon', text: '↑', title: 'Subir', 'aria-label': 'Subir etapa', disabled: index === 0, on: { click: () => move(-1) } }),
+      h('button', { type: 'button', class: 'btn sm icon', text: '↓', title: 'Descer', 'aria-label': 'Descer etapa', disabled: index === O.stages.length - 1, on: { click: () => move(1) } }),
+      h('button', { type: 'button', class: 'btn sm icon danger', text: '✕', title: 'Remover etapa', 'aria-label': 'Remover etapa', disabled: O.stages.length <= 2, on: { click: () => { O.stages.splice(index, 1); persistOrch(); rerender(); } } })),
+    stage.role === 'custom'
+      ? h('textarea', { rows: 2, maxLength: 4000, placeholder: 'Instrução desta etapa. Use {{tarefa}}, {{anterior}} ou {{passo1}} para inserir os textos.', value: stage.prompt, 'aria-label': `Instrução da etapa ${index + 1}`, on: { input: (event) => { stage.prompt = event.target.value; persistOrch(); } } })
+      : null);
+}
+
+function configPipeline() {
+  const list = h('div');
+  const add = h('button', { type: 'button', class: 'btn', text: '+ Adicionar etapa' });
+  const render = () => {
+    list.replaceChildren(...O.stages.map((stage, index) => stageRow(stage, index, render)));
+    add.disabled = O.stages.length >= MAX_PICK;
+  };
+  add.addEventListener('click', () => {
+    const pool = readyAgents();
+    O.stages.push({ role: 'review', agent: pool[O.stages.length % pool.length].id, prompt: '' });
+    persistOrch();
+    render();
+  });
+  render();
+  return [
+    field('Etapas (de 2 a 6), em ordem', h('div', null, list, h('div', { class: 'row' }, add, h('span', { class: 'hint', text: 'Cada etapa recebe a tarefa e o resultado da anterior. A implementação chega como proposta em texto: nada é gravado no projeto.' })))),
+  ];
+}
+
+function configMaestro() {
+  const maxInput = h('input', { type: 'number', min: 1, max: 6, step: 1, value: O.maxTasks });
+  maxInput.addEventListener('change', () => {
+    O.maxTasks = clampNum(maxInput.value, 1, 6, 4);
+    maxInput.value = String(O.maxTasks);
+    persistOrch();
+  });
+  return [
+    h('div', { class: 'cols' },
+      field('Coordenador (maestro)', agentSelect(O.coordinator, (value) => { O.coordinator = value; persistOrch(); }), 'Divide a tarefa em partes e, no fim, integra os resultados.', 'label'),
+      field('Máximo de subtarefas', maxInput, 'De 1 a 6 partes executadas em paralelo.', 'label')),
+    field('Agentes que executam as subtarefas', pillGroup(O.workers, persistOrch), 'O maestro escolhe, entre eles, o mais adequado para cada parte.'),
+  ];
+}
+
+function renderConfig() {
+  if (!S.state) {
+    orch.config.replaceChildren(h('p', { class: 'muted', text: 'Carregando agentes…' }));
+  } else if (!readyAgents().length) {
+    orch.config.replaceChildren(h('p', { class: 'formerr', text: 'Nenhum agente está instalado neste Linux. No Termux, rode: ia atualizar' }));
+  } else {
+    orch.config.replaceChildren(...(O.mode === 'compare' ? configCompare() : O.mode === 'pipeline' ? configPipeline() : configMaestro()));
+  }
+}
+
+function flowOf(mode) {
+  const dots = (...ids) => ids.map((id) => h('i', { class: 'dot', vars: { '--agent': agentOf(id).color } }));
+  const arrow = () => h('span', { text: '→' });
+  if (mode === 'compare') return [...dots('claude', 'codex', 'agy'), arrow(), h('span', { text: 'juiz' })];
+  if (mode === 'pipeline') return [h('span', { text: 'planejar' }), arrow(), h('span', { text: 'propor' }), arrow(), h('span', { text: 'revisar' })];
+  return [h('span', { text: 'maestro' }), arrow(), ...dots('copilot', 'hermes', 'opencode'), arrow(), h('span', { text: 'integra' })];
+}
+
+function renderModes() {
+  orch.modes.replaceChildren(...Object.entries(MODES).map(([id, info]) =>
+    h('button', { type: 'button', class: 'mode', 'aria-pressed': String(O.mode === id), on: { click: () => setMode(id) } },
+      h('span', { class: 'mt', text: info.title }), h('span', { class: 'flow' }, flowOf(id)), h('span', { class: 'ds', text: info.blurb }))));
+}
+
+function setMode(id) {
+  O.mode = id;
+  orch.error.textContent = '';
+  persistOrch();
+  renderModes();
+  renderConfig();
+}
+
+function orchDirChanged() {
+  if (!orch.dirBtn) return;
+  const dir = S.dir || S.state?.root || '';
+  orch.dirBtn.textContent = `📁 ${dir ? baseName(dir) : '…'}`;
+  orch.dirBtn.title = `Pasta que os agentes vão ler (clique para trocar):\n${dir}`;
+}
+
+function orchAgentsChanged() {
+  if (!orch.config) return;
+  const sig = S.agents.map((agent) => `${agent.id}:${agent.installed ? 1 : 0}`).join('|');
+  if (sig !== O.sig) {
+    O.sig = sig;
+    seedOrch();
+    renderModes();
+    renderConfig();
+  }
+  syncPasteTargets();
+}
+
+function buildSpec() {
+  const prompt = orch.task.value.trim();
+  if (!prompt) return { error: 'Escreva a tarefa para os agentes.' };
+  const spec = { mode: O.mode, prompt, dir: S.dir || undefined, timeoutSec: O.timeoutSec };
+  if (O.mode === 'compare') {
+    const agents = chosen(O.agents).filter(isReady);
+    if (agents.length < 2) return { error: 'Escolha pelo menos 2 agentes instalados para comparar.' };
+    spec.agents = agents;
+    spec.judge = O.judge === 'none' ? '' : O.judge === 'auto' ? agents[0] : O.judge;
+    if (spec.judge && !isReady(spec.judge)) return { error: 'O juiz escolhido não está instalado.' };
+  } else if (O.mode === 'pipeline') {
+    if (O.stages.length < 2) return { error: 'O pipeline precisa de pelo menos 2 etapas.' };
+    for (const [index, stage] of O.stages.entries()) {
+      if (!isReady(stage.agent)) return { error: `Etapa ${index + 1}: escolha um agente instalado.` };
+      if (stage.role === 'custom' && !stage.prompt.trim()) return { error: `Etapa ${index + 1}: escreva a instrução da etapa personalizada.` };
+    }
+    spec.steps = O.stages.map(({ role, agent, prompt: text }) => ({ role, agent, prompt: text }));
+  } else {
+    const agents = chosen(O.workers).filter(isReady);
+    if (!agents.length) return { error: 'Escolha pelo menos 1 agente instalado para executar as subtarefas.' };
+    if (!isReady(O.coordinator)) return { error: 'Escolha um coordenador instalado.' };
+    Object.assign(spec, { agents, coordinator: O.coordinator, maxTasks: O.maxTasks });
+  }
+  return { spec };
+}
+
+let starting = false;
+
+async function startRun() {
+  if (starting) return;
+  const { spec, error } = buildSpec();
+  orch.error.textContent = error ?? '';
+  if (error) return;
+  starting = true;
+  orch.go.disabled = true;
+  try {
+    const run = await api('POST', 'api/runs', spec);
+    noteServerTime(run.serverTime);
+    persistOrch();
+    openRun(run.id, run);
+    loops.runs?.kick();
+  } catch (failure) {
+    orch.error.textContent = failure.message;
+  } finally {
+    starting = false;
+    orch.go.disabled = false;
+  }
+}
+
+function buildOrchForm() {
+  orch.modes = h('div', { class: 'modes', role: 'group', 'aria-label': 'Modo de orquestração' });
+  orch.config = h('section', { class: 'panel' });
+  orch.error = h('p', { class: 'formerr', role: 'alert' });
+  orch.task = h('textarea', {
+    rows: 5,
+    maxLength: 16000,
+    'aria-label': 'Tarefa',
+    placeholder: 'Descreva a tarefa. Ex.: "Revise a segurança do servidor do painel e liste os riscos por gravidade."',
+    on: { keydown: (event) => { if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); startRun(); } } },
+  });
+  orch.dirBtn = h('button', { type: 'button', class: 'btn dirbtn', on: { click: () => $('#dir-btn').click() } });
+  orch.timeout = h('input', { type: 'number', min: 30, max: 1800, step: 30, value: O.timeoutSec, 'aria-label': 'Tempo limite por agente, em segundos' });
+  orch.timeout.addEventListener('change', () => {
+    O.timeoutSec = clampNum(orch.timeout.value, 30, 1800, 600);
+    orch.timeout.value = String(O.timeoutSec);
+    persistOrch();
+  });
+  orch.go = h('button', { type: 'button', class: 'btn primary', text: '▶ Executar', on: { click: startRun } });
+  const examples = h('select', { 'aria-label': 'Exemplos de tarefa' }, h('option', { value: '', text: 'Exemplos de tarefa…' }), TEMPLATES.map(([label], index) => h('option', { value: String(index), text: label })));
+  examples.addEventListener('change', () => {
+    const picked = TEMPLATES[Number(examples.value)];
+    examples.value = '';
+    if (!picked) return;
+    orch.task.value = picked[1];
+    orch.task.focus();
+  });
+  $('#orch-form').replaceChildren(
+    h('div', { class: 'lock' }, h('span', { text: '🔒' }), h('span', { text: 'Somente leitura: os agentes leem e analisam o projeto, mas não alteram arquivos. Código novo chega como proposta em texto para você aplicar.' })),
+    orch.modes,
+    h('section', { class: 'panel' },
+      field('Tarefa', orch.task),
+      h('div', { class: 'row' },
+        orch.dirBtn, examples, h('span', { class: 'grow' }),
+        h('label', { class: 'row' }, h('span', { class: 'muted', text: 'Limite por agente' }), orch.timeout, h('span', { class: 'muted', text: 'segundos' })))),
+    orch.config,
+    h('div', { class: 'row formbar' }, orch.go, h('span', { class: 'hint', text: 'Ctrl+Enter também executa.' }), orch.error),
+  );
+  renderModes();
+  renderConfig();
+  orchDirChanged();
+}
+
+/* ---------- orquestracao: execucao, resultado e historico ---------- */
+const noteServerTime = (serverTime) => {
+  if (typeof serverTime === 'number') S.skew = serverTime - Date.now();
+};
+const firstLine = (text, max = 90) => {
+  const line = String(text ?? '').split('\n').find((item) => item.trim())?.trim() ?? '';
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+};
+
+const KINDS = ['agent', 'judge', 'stage', 'coordinator', 'worker', 'integrate'];
+const KIND_TITLE = {
+  agent: 'Respostas em paralelo',
+  judge: 'Juiz',
+  stage: 'Etapas em sequência',
+  coordinator: 'Plano do maestro',
+  worker: 'Subtarefas em paralelo',
+  integrate: 'Integração final',
+};
+const WAITING = {
+  pending: 'Aguardando a etapa anterior…',
+  queued: 'Na fila: esperando uma vaga entre os agentes simultâneos…',
+  running: 'Executando… alguns agentes só mostram a resposta quando terminam.',
+  cancelled: 'Cancelado antes de terminar.',
+  skipped: 'Não foi necessário executar.',
+};
+const RV = { id: null, rev: -1, run: null, parts: null, secs: new Map(), steps: new Map(), resultSig: '', actionsFor: '', paste: null };
+
+// A resposta final ja aparece no painel de resultado: o passo que a gerou e o plano do maestro ficam recolhidos.
+const autoCollapsed = (step, run) => step.status === 'done' && (step.kind === 'coordinator' || Boolean(run.result && step.output === run.result));
+
+function makeStepView() {
+  let current = null;
+  let output = '';
+  let sig = '';
+  let touched = false;
+  let collapsed = false;
+  const title = h('span', { class: 't' });
+  const chip = h('span', { class: 'chip' });
+  const time = h('span', { class: 'time' });
+  const copy = h('button', { type: 'button', class: 'btn sm link', text: 'Copiar', hidden: true, on: { click: (event) => { event.stopPropagation(); copyWithToast(output, 'Resposta'); } } });
+  const head = h('div', { class: 'step-h', role: 'button', tabindex: '0', 'aria-expanded': 'true' }, title, chip, h('span', { class: 'grow' }), time, copy);
+  const body = h('div', { class: 'step-b' });
+  const root = h('div', { class: 'step' }, head, body);
+
+  const setCollapsed = (value) => {
+    collapsed = value;
+    root.classList.toggle('collapsed', value);
+    head.setAttribute('aria-expanded', String(!value));
+  };
+  const toggle = () => {
+    touched = true;
+    setCollapsed(!collapsed);
+  };
+  head.addEventListener('click', toggle);
+  head.addEventListener('keydown', (event) => {
+    if (event.target === head && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      toggle();
+    }
+  });
+
+  function tick() {
+    if (!current) return;
+    if (current.status === 'running' && current.startedAt) time.textContent = fmtDur(nowMs() - current.startedAt);
+    else time.textContent = current.durationMs == null ? '' : fmtDur(current.durationMs);
+  }
+
+  function renderBody(step) {
+    const stick = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
+    const nodes = [];
+    if (step.error && step.status !== 'done') nodes.push(h('p', { class: 'step-err', text: step.error }));
+    if (step.status === 'done') nodes.push(output ? md(output) : h('p', { class: 'wait', text: 'Sem saída.' }));
+    else if (output) nodes.push(h('pre', { class: 'live', text: output }));
+    else if (WAITING[step.status] && !step.error) nodes.push(h('p', { class: 'wait', text: WAITING[step.status] }));
+    body.replaceChildren(...nodes);
+    if (stick) body.scrollTop = body.scrollHeight;
+  }
+
+  function update(step, run) {
+    current = step;
+    output = step.output ?? '';
+    root.style.setProperty('--agent', agentOf(step.agent).color);
+    root.classList.toggle('running', step.status === 'running');
+    title.textContent = step.title;
+    chip.className = `chip st-${step.status}`;
+    chip.textContent = STEP_STATUS[step.status] ?? step.status;
+    copy.hidden = !(step.status === 'done' && output);
+    tick();
+    const next = `${step.status}|${output.length}|${step.error ?? ''}`;
+    if (next !== sig) {
+      sig = next;
+      renderBody(step);
+    }
+    if (!touched) setCollapsed(autoCollapsed(step, run));
+  }
+
+  return { root, update, tick };
+}
+
+function sectionFor(kind) {
+  let sec = RV.secs.get(kind);
+  if (sec) return sec;
+  const box = h('div', { class: kind === 'agent' || kind === 'worker' ? 'fan' : 'stack' });
+  const root = h('section', { class: 'sec' }, h('h3', { text: KIND_TITLE[kind] ?? 'Etapas' }), box);
+  sec = { root, box, rank: KINDS.includes(kind) ? KINDS.indexOf(kind) : KINDS.length };
+  const next = [...RV.secs.values()].filter((other) => other.rank > sec.rank).sort((a, b) => a.rank - b.rank)[0];
+  RV.secs.set(kind, sec);
+  RV.parts.body.insertBefore(root, next ? next.root : null);
+  return sec;
+}
+
+// No maestro os ids dos passos sao renumerados quando as subtarefas entram; por isso a chave e tipo + ordem dentro do tipo.
+function updateSteps(run) {
+  const seen = new Set();
+  const counters = {};
+  for (const step of run.steps) {
+    counters[step.kind] = (counters[step.kind] ?? -1) + 1;
+    const key = `${step.kind}#${counters[step.kind]}`;
+    seen.add(key);
+    let view = RV.steps.get(key);
+    if (!view) {
+      view = makeStepView();
+      RV.steps.set(key, view);
+      sectionFor(step.kind).box.append(view.root);
+    }
+    view.update(step, run);
+  }
+  for (const [key, view] of RV.steps) {
+    if (seen.has(key)) continue;
+    view.root.remove();
+    RV.steps.delete(key);
+  }
+  for (const [kind, sec] of RV.secs) {
+    if (sec.box.children.length) continue;
+    sec.root.remove();
+    RV.secs.delete(kind);
+  }
+}
+
+function syncPasteTargets() {
+  const paste = RV.paste;
+  if (!paste?.select.isConnected) return;
+  const live = S.sessions.filter((session) => !session.dead);
+  const sig = live.map((session) => session.name).join('|');
+  if (paste.sig === sig) return;
+  paste.sig = sig;
+  const previous = paste.select.value;
+  paste.select.replaceChildren(...live.map((session) => h('option', { value: session.name, text: sessionLabel(session) })));
+  if (live.some((session) => session.name === previous)) paste.select.value = previous;
+  paste.select.hidden = live.length === 0;
+  paste.button.hidden = live.length === 0;
+  paste.note.hidden = live.length > 0;
+}
+
+async function pasteResult() {
+  const name = RV.paste?.select.value;
+  if (!name || !RV.id) return;
+  const session = S.sessions.find((item) => item.name === name);
+  try {
+    await api('POST', `api/runs/${RV.id}/send`, { name, enter: false });
+    toast(`Resultado colado em ${session ? sessionLabel(session) : name}. Aperte Enter no terminal para enviar.`, 'ok', 5000);
+  } catch (error) {
+    fail(error);
+  }
+}
+
+function updateResult(run) {
+  const box = RV.parts.result;
+  const text = run.result ?? '';
+  RV.parts.jump.hidden = !text;
+  if (!text) {
+    box.hidden = true;
+    if (RV.resultSig) box.replaceChildren();
+    RV.resultSig = '';
+    RV.paste = null;
+    return;
+  }
+  if (RV.resultSig === text) return;
+  RV.resultSig = text;
+  const select = h('select', { 'aria-label': 'Sessão que vai receber o resultado' });
+  const button = h('button', { type: 'button', class: 'btn', text: 'Colar na sessão', title: 'Cola o resultado no terminal do agente, sem apertar Enter', on: { click: pasteResult } });
+  const note = h('span', { class: 'hint', text: 'Abra um agente na aba Agentes para colar o resultado lá.' });
+  RV.paste = { select, button, note, sig: null };
+  box.hidden = false;
+  box.replaceChildren(
+    h('div', { class: 'result-h' },
+      h('h3', { text: 'Resultado' }), h('span', { class: 'grow' }),
+      h('button', { type: 'button', class: 'btn', text: 'Copiar', on: { click: () => copyWithToast(run.result, 'Resultado') } }),
+      h('button', { type: 'button', class: 'btn', text: 'Baixar .md', on: { click: () => download(`orquestracao-${run.mode}-${run.id}.md`, `# ${MODES[run.mode]?.title ?? run.mode}\n\n## Tarefa\n\n${run.prompt}\n\n## Resultado\n\n${run.result}\n`) } }),
+      select, button, note),
+    h('div', { class: 'result-body' }, md(text)),
+  );
+  syncPasteTargets();
+}
+
+function updateRunActions(run) {
+  const active = run.status === 'running';
+  const key = `${run.id}|${active}`;
+  if (RV.actionsFor === key) return;
+  RV.actionsFor = key;
+  RV.parts.actions.replaceChildren(
+    ...(active
+      ? [confirmButton({ label: 'Cancelar execução', armedLabel: 'Cancelar mesmo?', title: 'Cancelar a execução', className: 'btn danger', onConfirm: () => cancelRun(run.id) })]
+      : [
+        h('button', { type: 'button', class: 'btn', text: '↻ Refazer', title: 'Voltar ao formulário com as mesmas escolhas', on: { click: () => reuseRun(RV.run) } }),
+        confirmButton({ label: 'Apagar', armedLabel: 'Apagar mesmo?', title: 'Apagar do histórico', className: 'btn danger', onConfirm: () => deleteRun(run.id) }),
+      ]),
+  );
+}
+
+function updateBanner(run) {
+  const banner = RV.parts.banner;
+  const show = Boolean(run.error) && run.status !== 'running';
+  banner.hidden = !show;
+  if (!show) return;
+  banner.className = `banner ${run.status === 'cancelled' ? 'warn' : 'bad'}`;
+  banner.textContent = run.error;
+}
+
+function tickRun() {
+  const run = RV.run;
+  if (!run || !RV.parts) return;
+  RV.parts.time.textContent = `⏱ ${fmtDur((run.finishedAt ?? nowMs()) - (run.startedAt ?? run.createdAt))}`;
+  for (const view of RV.steps.values()) view.tick();
+}
+
+function buildRunShell(run) {
+  RV.id = run.id;
+  RV.rev = -1;
+  RV.secs.clear();
+  RV.steps.clear();
+  RV.resultSig = '';
+  RV.actionsFor = '';
+  RV.paste = null;
+  const parts = {
+    title: h('h2'),
+    chip: h('span', { class: 'chip' }),
+    time: h('span', { class: 'muted' }),
+    jump: h('button', { type: 'button', class: 'btn sm', text: '↓ Resultado', title: 'Ir para o resultado', hidden: true, on: { click: () => RV.parts.result.scrollIntoView({ behavior: 'smooth', block: 'start' }) } }),
+    actions: h('span', { class: 'row' }),
+    prompt: h('pre'),
+    banner: h('div', { class: 'banner', hidden: true }),
+    body: h('div'),
+    result: h('section', { class: 'result', hidden: true }),
+  };
+  RV.parts = parts;
+  $('#orch-run').replaceChildren(
+    h('div', { class: 'run-head' },
+      h('button', { type: 'button', class: 'btn sm', text: '← Nova execução', on: { click: showForm } }),
+      parts.title, parts.chip, parts.time, h('span', { class: 'grow' }), parts.jump, parts.actions),
+    h('details', { class: 'run-task' }, h('summary', { text: 'Tarefa enviada' }), parts.prompt),
+    parts.banner, parts.body, parts.result,
+  );
+}
+
+function renderRun(run) {
+  if (RV.id !== run.id || !RV.parts?.title.isConnected) buildRunShell(run);
+  RV.run = run;
+  RV.rev = run.rev;
+  const parts = RV.parts;
+  parts.title.textContent = MODES[run.mode]?.title ?? run.mode;
+  parts.chip.className = `chip st-${run.status}`;
+  parts.chip.textContent = RUN_STATUS[run.status] ?? run.status;
+  parts.prompt.textContent = run.prompt;
+  updateRunActions(run);
+  updateBanner(run);
+  updateSteps(run);
+  updateResult(run);
+  tickRun();
+}
+
+function showForm() {
+  O.runId = null;
+  RV.id = null;
+  RV.run = null;
+  $('#orch-run').hidden = true;
+  $('#orch-run').replaceChildren();
+  $('#orch-form').hidden = false;
+}
+
+function openRun(id, initial) {
+  O.runId = id;
+  $('#orch-form').hidden = true;
+  $('#orch-run').hidden = false;
+  setTab('orch');
+  if (initial) {
+    renderRun(initial);
+  } else {
+    RV.id = null;
+    RV.run = null;
+    $('#orch-run').replaceChildren(h('p', { class: 'muted', text: 'Carregando execução…' }));
+  }
+  loops.run?.kick();
+}
+
+function reuseRun(run) {
+  const opts = run.options ?? {};
+  O.mode = Object.hasOwn(MODES, run.mode) ? run.mode : 'compare';
+  if (O.mode === 'compare') {
+    O.agents = new Set(strings(opts.agents));
+    O.judge = opts.judge ? String(opts.judge) : 'none';
+  } else if (O.mode === 'pipeline') {
+    O.stages = cleanStages(opts.steps);
+  } else {
+    O.workers = new Set(strings(opts.agents));
+    O.coordinator = String(opts.coordinator ?? '');
+    O.maxTasks = clampNum(opts.maxTasks, 1, 6, 4);
+  }
+  O.timeoutSec = clampNum(opts.timeoutSec, 30, 1800, 600);
+  orch.timeout.value = String(O.timeoutSec);
+  orch.task.value = run.prompt ?? '';
+  orch.error.textContent = '';
+  seedOrch();
+  persistOrch();
+  renderModes();
+  renderConfig();
+  showForm();
+}
+
+async function cancelRun(id) {
+  try {
+    await api('POST', `api/runs/${id}/cancel`);
+    toast('Cancelando a execução…', 'warn', 2500);
+  } catch (error) {
+    fail(error);
+  }
+  loops.run?.kick(300);
+  loops.runs?.kick(300);
+}
+
+async function deleteRun(id) {
+  try {
+    await api('DELETE', `api/runs/${id}`);
+  } catch (error) {
+    fail(error);
+    return;
+  }
+  if (O.runId === id) showForm();
+  await refreshRuns().catch(() => {});
+  toast('Execução apagada.', 'ok', 2000);
+}
+
+async function pollRun() {
+  const id = O.runId;
+  if (!id || S.tab !== 'orch') return;
+  if (RV.id === id && RV.run && RV.run.status !== 'running') return;
+  let run;
+  try {
+    run = await api('GET', `api/runs/${id}${RV.id === id && RV.rev >= 0 ? `?rev=${RV.rev}` : ''}`);
+  } catch (error) {
+    if (error.status === 404 && O.runId === id) {
+      showForm();
+      toast('Essa execução não existe mais.', 'warn');
+      return;
+    }
+    throw error;
+  }
+  noteServerTime(run.serverTime);
+  if (O.runId !== id || run.unchanged) return;
+  renderRun(run);
+}
+
+/* historico */
+const seenStatus = new Map();
+let historySig = '';
+
+function historyRow(run) {
+  const agents = [...new Set(run.agents ?? [])];
+  return h('div', { class: 'hrow' },
+    h('span', { class: `chip st-${run.status}`, text: RUN_STATUS[run.status] ?? run.status }),
+    h('div', { class: 'what' },
+      h('b', { text: firstLine(run.prompt), title: run.prompt }),
+      h('div', { class: 'meta' },
+        h('span', { text: MODES[run.mode]?.title ?? run.mode }),
+        agents.map((id) => h('span', null, h('i', { class: 'dot', vars: { '--agent': agentOf(id).color } }), ` ${agentOf(id).short}`)),
+        h('span', { text: fmtDate(run.createdAt) }),
+        run.finishedAt ? h('span', { text: fmtDur(run.finishedAt - run.createdAt) }) : null)),
+    h('div', { class: 'acts' },
+      h('button', { type: 'button', class: 'btn sm', text: 'Abrir', on: { click: () => openRun(run.id) } }),
+      run.status === 'running' ? null : confirmButton({ label: '🗑', armedLabel: 'Apagar?', title: 'Apagar esta execução', onConfirm: () => deleteRun(run.id) })));
+}
+
+function renderHistory() {
+  const sig = JSON.stringify([S.agents.length, S.runs.map((run) => [run.id, run.status, run.finishedAt])]);
+  if (sig === historySig) return;
+  historySig = sig;
+  const box = $('#history');
+  if (!S.runs.length) {
+    box.replaceChildren(h('div', { class: 'empty' }, h('h2', { text: 'Nenhuma execução ainda' }), h('p', { text: 'As comparações, pipelines e maestros que você executar ficam salvos aqui, com todas as respostas.' })));
+    return;
+  }
+  box.replaceChildren(h('div', { class: 'hlist' }, S.runs.map((run) => historyRow(run))));
+}
+
+async function refreshRuns() {
+  const data = await api('GET', 'api/runs');
+  noteServerTime(data.serverTime);
+  S.runs = [...data.runs].sort((a, b) => b.createdAt - a.createdAt);
+  for (const run of S.runs) {
+    const before = seenStatus.get(run.id);
+    seenStatus.set(run.id, run.status);
+    if (before !== 'running' || run.status === 'running' || (S.tab === 'orch' && O.runId === run.id)) continue;
+    const kind = run.status === 'done' ? 'ok' : run.status === 'error' ? 'error' : 'warn';
+    toast(`${MODES[run.mode]?.title ?? 'Execução'} ${RUN_STATUS[run.status] ?? run.status}: ${firstLine(run.prompt, 60)}`, kind, 8000);
+  }
+  renderHeader();
+  renderHistory();
+  updateTitle();
+}
+
+/* ---------- laços de atualizacao ---------- */
+function loop(task, delay) {
+  let timer = 0;
+  let busy = false;
+  let failures = 0;
+  async function cycle() {
+    clearTimeout(timer);
+    if (busy) return;
+    busy = true;
+    let wait = delay();
+    try {
+      if (!document.hidden) await task();
+      failures = 0;
+    } catch {
+      failures += 1;
+      wait = Math.min(15000, wait * (1 + failures));
+    } finally {
+      busy = false;
+      timer = setTimeout(cycle, wait);
+    }
+  }
+  return {
+    start: cycle,
+    kick(ms = 0) {
+      clearTimeout(timer);
+      timer = setTimeout(cycle, ms);
+    },
+  };
+}
+
+loops.state = loop(refreshState, () => (S.tab === 'agents' ? 1500 : 4000));
+loops.previews = loop(refreshPreviews, () => 1500);
+loops.runs = loop(refreshRuns, () => (S.runs.some((run) => run.status === 'running') ? 2500 : 8000));
+loops.run = loop(pollRun, () => 1000);
+
+/* ---------- abas ---------- */
+const TABS = {
+  agents: ['#agentes', '#view-agents'],
+  orch: ['#orquestrar', '#view-orch'],
+  history: ['#historico', '#view-history'],
+};
+const tabFromHash = () => Object.keys(TABS).find((tab) => TABS[tab][0] === location.hash) ?? 'agents';
+
+function setTab(tab) {
+  if (!TABS[tab]) tab = 'agents';
+  S.tab = tab;
+  for (const button of document.querySelectorAll('.tab')) button.setAttribute('aria-selected', String(button.dataset.tab === tab));
+  for (const [id, [, selector]] of Object.entries(TABS)) $(selector).classList.toggle('on', id === tab);
+  if (location.hash !== TABS[tab][0]) history.replaceState(null, '', TABS[tab][0]);
+  applyLayout();
+  if (tab === 'agents') {
+    kickPreviews();
+    loops.state.kick();
+  } else if (tab === 'history') {
+    loops.runs.kick();
+  } else {
+    loops.run.kick();
+  }
+}
+
+// Depois de um tempo em segundo plano o Android derruba os WebSockets; ao voltar os terminais reconectam sozinhos.
+let awayTimer = 0;
+document.addEventListener('visibilitychange', () => {
+  clearTimeout(awayTimer);
+  if (document.hidden) {
+    awayTimer = setTimeout(() => {
+      S.away = true;
+      applyLayout();
+    }, 20000);
+    return;
+  }
+  const wasAway = S.away;
+  S.away = false;
+  if (wasAway) applyLayout();
+  for (const item of Object.values(loops)) item.kick();
+});
+
+setInterval(() => {
+  if (!document.hidden && S.tab === 'orch') tickRun();
+}, 1000);
+
+function boot() {
+  for (const [selector, name] of [['#dock', '--dock-h'], ['.top', '--top-h']]) {
+    new ResizeObserver(() => document.documentElement.style.setProperty(name, `${$(selector).offsetHeight}px`)).observe($(selector));
+  }
+  for (const button of document.querySelectorAll('.tab')) button.addEventListener('click', () => setTab(button.dataset.tab));
+  window.addEventListener('hashchange', () => setTab(tabFromHash()));
+  wireDirDialog();
+  wireDock();
+  buildOrchForm();
+  setTab(tabFromHash());
+  for (const item of Object.values(loops)) item.start();
+}
+boot();
+})();
+</script>
+</body>
+</html>

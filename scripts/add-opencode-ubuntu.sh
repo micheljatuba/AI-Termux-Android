@@ -22,6 +22,8 @@ esac
 command -v proot-distro >/dev/null 2>&1 || fail 'PRoot-Distro nao encontrado.'
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f "$script_dir/setup-linux.sh" ]] || fail 'Baixe o repositorio completo antes de executar este complemento.'
+opencode_version="$(sed -n 's/^opencode_version=//p' "$script_dir/setup-linux.sh")"
+[[ $opencode_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'Versao do OpenCode nao encontrada em setup-linux.sh.'
 launcher="$PREFIX/bin/ia"
 [[ -f "$launcher" && ! -L "$launcher" ]] || fail 'Menu ia manual nao encontrado como arquivo regular.'
 [[ ! -e "$HOME/.local/share/termux-ai/owner" ]] || fail 'Instalacao gerenciada: use bash install.sh no lugar deste complemento.'
@@ -69,7 +71,7 @@ if ! awk '
 fi
 bash -n "$work_dir/ia"
 
-printf '%s\n' 'Sera instalado apenas OpenCode 1.18.30 no Ubuntu existente.' \
+printf '%s\n' "Sera instalado apenas OpenCode $opencode_version no Ubuntu existente; uma versao mais nova sera mantida." \
     'A opcao 6 sera acrescentada ao menu; contas e outros agentes nao serao reconfigurados.' \
     'Login e tarefas do OpenCode ainda precisam de teste neste Android/PRoot.'
 if (( ! assume_yes )); then

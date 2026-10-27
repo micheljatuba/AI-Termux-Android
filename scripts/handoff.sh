@@ -166,13 +166,17 @@ require_repo() {
 # de visibilidade so vale se o destino real for exatamente a URL verificada.
 assert_single_push_target() {
     local -a urls=() pushurls=()
-    mapfile -t urls < <(git config --get-all remote.origin.url)
+    local listing
+    # Sem substituicao de processo: o PRoot nao abre /dev/fd.
+    listing="$(git config --get-all remote.origin.url || true)"
+    [[ -z $listing ]] || mapfile -t urls <<< "$listing"
     (( ${#urls[@]} == 1 )) \
         || fail 'O remoto origin tem mais de uma URL e o git enviaria para todas. Deixe apenas uma.'
     if git config --get-regexp '^url\..*\.pushinsteadof$' > /dev/null 2>&1; then
         fail 'Ha regras pushInsteadOf no git; elas podem redirecionar o envio. Remova-as para usar o handoff.'
     fi
-    mapfile -t pushurls < <(git config --get-all remote.origin.pushurl || true)
+    listing="$(git config --get-all remote.origin.pushurl || true)"
+    [[ -z $listing ]] || mapfile -t pushurls <<< "$listing"
     if (( ${#pushurls[@]} > 0 )); then
         [[ ${#pushurls[@]} -eq 1 && ${pushurls[0]} == "${urls[0]}" ]] \
             || fail 'O remoto origin tem um pushurl diferente da url; o handoff nao envia para destinos nao verificados.'
@@ -219,7 +223,9 @@ confirm_private_remote() {
 }
 
 fill_staged_entries() {
-    mapfile -d '' -t staged_entries < <(git diff --cached --raw -z --no-renames HEAD)
+    # Saida separada por NUL vai para um arquivo: variaveis do Bash nao guardam NUL e o PRoot nao abre /dev/fd.
+    git diff --cached --raw -z --no-renames HEAD > "$work/staged.raw"
+    mapfile -d '' -t staged_entries < "$work/staged.raw"
 }
 
 stage_snapshot() {
@@ -485,8 +491,11 @@ cmd_continue() {
     timeout 180 git fetch --quiet --no-tags origin "+refs/heads/$handoff_prefix/*:refs/remotes/origin/$handoff_prefix/*" \
         || fail 'Nao consegui buscar os handoffs. Verifique a conexao e a autenticacao (gh auth login).'
 
-    local ref sha when author suffix origin_branch
+    local ref sha when author suffix origin_branch listing
     local -a refs=() shas=() labels=() authors=()
+    listing="$(git for-each-ref --sort=-committerdate \
+        --format='%(refname)%09%(objectname)%09%(committerdate:format:%Y-%m-%d %H:%M)%09%(authoremail)' \
+        "refs/remotes/origin/$handoff_prefix/")"
     while IFS=$'\t' read -r ref sha when author; do
         suffix="${ref#refs/remotes/origin/$handoff_prefix/}"
         [[ $suffix =~ ^[a-z0-9-]{1,24}/[0-9]{8}T[0-9]{6}Z$ ]] || continue
@@ -497,9 +506,7 @@ cmd_continue() {
         authors+=("$author")
         labels+=("$when  ${suffix%%/*}  branch $(sanitize "$origin_branch" 60)  $(sanitize "$author" 60)")
         (( ${#refs[@]} < 10 )) || break
-    done < <(git for-each-ref --sort=-committerdate \
-        --format='%(refname)%09%(objectname)%09%(committerdate:format:%Y-%m-%d %H:%M)%09%(authoremail)' \
-        "refs/remotes/origin/$handoff_prefix/")
+    done <<< "$listing"
 
     (( ${#refs[@]} > 0 )) || fail 'Nenhum handoff valido encontrado. No outro aparelho, execute: ia handoff'
     local index
