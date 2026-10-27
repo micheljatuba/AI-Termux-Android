@@ -173,7 +173,7 @@ if (( enable_menu )) && [[ -e "$HOME/.bashrc" || -L "$HOME/.bashrc" ]]; then
         fail 'A configuracao Bash ja abre o menu ia; remova essa chamada ou use --no-menu.'
     fi
 fi
-required_files=(bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma-launcher.sh)
+required_files=(bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma_auth.py scripts/embeddinggemma-launcher.sh scripts/handoff.sh)
 for hub_file in "${hub_files[@]}"; do
     required_files+=("scripts/hub/$hub_file")
 done
@@ -244,6 +244,7 @@ proot-distro "${agent_login[@]}" -- /bin/bash -se -- install-assets "$project_ro
 
 mkdir -p "$state_dir/tools" "$state_dir/web"
 install -m 644 "$project_root/scripts/embeddinggemma_cli.py" "$state_dir/tools/embeddinggemma_cli.py"
+install -m 644 "$project_root/scripts/embeddinggemma_auth.py" "$state_dir/tools/embeddinggemma_auth.py"
 install -m 644 "$project_root/scripts/embeddinggemma_web.py" "$state_dir/tools/embeddinggemma_web.py"
 install -m 644 "$project_root/scripts/webui.sh" "$state_dir/webui.sh"
 install -m 644 "$project_root/scripts/web-menu.sh" "$state_dir/web/menu.sh"

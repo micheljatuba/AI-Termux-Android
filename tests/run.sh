@@ -31,6 +31,7 @@ export TERMUX_AI_TEST_VERSIONS="$test_root/versions.txt"
 export TERMUX_AI_TEST_DIAG="$test_root/diagnostics.txt"
 export TERMUX_AI_TEST_UPDATES="$test_root/updates.log"
 export TERMUX_AI_TEST_HANG_PID="$test_root/hung-proot.pid"
+clean_path="$PATH"
 export PATH="$test_root/bin:$PATH"
 unset TERMUX_AI_GUEST PROOT_VERBOSE
 
@@ -78,8 +79,14 @@ for index in "${!arguments[@]}"; do
                             printf 'painel-ttyd iniciado em 127.0.0.1:7681 (PID 11).\n'
                             printf 'painel iniciado em 127.0.0.1:7690 (PID 12).\n'
                             ;;
-                        terminal) printf 'terminal iniciado em 127.0.0.1:7680 (PID 13).\n' ;;
-                        embedding) printf 'embedding iniciado em 127.0.0.1:8085 (PID 14).\n' ;;
+                        terminal)
+                            printf 'terminal iniciado em 127.0.0.1:7680 (PID 13).\n'
+                            printf 'Terminal: http://127.0.0.1:7680/00112233445566778899aabbccddeeff/menu/\n'
+                            ;;
+                        embedding)
+                            printf 'embedding iniciado em 127.0.0.1:8085 (PID 14).\n'
+                            printf 'EmbeddingGemma: http://127.0.0.1:8085/00112233445566778899aabbccddeeff/\n'
+                            ;;
                     esac
                 done
                 if [[ -n ${TERMUX_AI_TEST_WEB_HANG:-} ]]; then
@@ -235,6 +242,26 @@ chmod 755 "$fake_guest/.local/bin/hermes"
 assert_equal "$(run_in_fake_guest "$launch_script" hermes chat -q 'two words')" 'guest=1 args=chat -q two words' \
     'runs an installed Hermes inside the Linux guest'
 
+bash "$project_root/bin/ia" handoff --dry-run --note 'two words'
+mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+assert_equal "${actual_args[11]}" ia-handoff 'routes handoff to the guest script'
+assert_equal "${actual_args[12]}" handoff 'passes the handoff command'
+assert_equal "${actual_args[13]}" --dry-run 'preserves handoff flags'
+assert_equal "${actual_args[15]}" 'two words' 'preserves the handoff note'
+for continue_name in continuar continue; do
+    bash "$project_root/bin/ia" "$continue_name" --latest
+    mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+    assert_equal "${actual_args[11]}" ia-handoff 'routes continue to the guest script'
+    assert_equal "${actual_args[12]}" continue 'normalizes the continue command'
+    assert_equal "${actual_args[13]}" --latest 'preserves continue flags'
+done
+launch_script="${actual_args[9]}"
+launch_status=0
+run_in_fake_guest "$launch_script" ia-handoff continue > "$test_root/handoff-missing.log" 2>&1 || launch_status=$?
+assert_equal "$launch_status" 127 'a missing handoff ends with the command-not-found status'
+grep -Fq 'bash install.sh' "$test_root/handoff-missing.log"
+printf '%s\n' 'PASS handoff dispatch and update hint'
+
 bash "$project_root/bin/ia" orquestrar comparar --agentes claude,copilot 'two words'
 mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
 assert_equal "${actual_args[2]}" --user 'runs the orchestrator as the dedicated user'
@@ -317,12 +344,16 @@ test ! -e "$TERMUX_AI_TEST_OPEN_LOG" || fail_test 'opened the browser without a 
 assert_equal "$(ls -A "$test_root/web-tmp")" '' 'removes the start log that holds the panel token link'
 assert_equal "$(< "$TERMUX_AI_TEST_WAKELOCK_LOG")" 'lock' 'acquires termux-wake-lock when starting the panel'
 TERMUX_AI_TEST_WEB_STARTED='painel embedding' bash "$project_root/bin/ia" web start todos > "$test_root/web-all.log"
-grep -Fq 'EmbeddingGemma: http://127.0.0.1:8085' "$test_root/web-all.log"
+grep -Fxq 'EmbeddingGemma: http://127.0.0.1:8085/00112233445566778899aabbccddeeff/' "$test_root/web-all.log"
 grep -Fq 'Painel: ' "$test_root/web-all.log"
 bash "$project_root/bin/ia" web start terminal > "$test_root/web-terminal.log"
-grep -Fxq 'Terminal: http://127.0.0.1:7680' "$test_root/web-terminal.log"
-if grep -Fq 'Painel:' "$test_root/web-terminal.log" || grep -Fq 'token' "$test_root/web-terminal.log"; then
+grep -Fxq 'Terminal: http://127.0.0.1:7680/00112233445566778899aabbccddeeff/menu/' "$test_root/web-terminal.log"
+grep -Fq 'token de acesso' "$test_root/web-terminal.log" || fail_test 'terminal start did not warn that the link holds a token'
+if grep -Fq 'Painel:' "$test_root/web-terminal.log"; then
     fail_test 'terminal start mentioned the panel link'
+fi
+if grep -Eq 'http://127\.0\.0\.1:(7680|8085)/?$' "$test_root/web-terminal.log" "$test_root/web-all.log"; then
+    fail_test 'printed a terminal or embedding link without the token'
 fi
 assert_equal "$(grep -c '^lock$' "$TERMUX_AI_TEST_WAKELOCK_LOG")" 3 'refreshes the wake-lock on every start'
 bash "$project_root/bin/ia" web stop embedding
@@ -430,7 +461,10 @@ HOME="$assets_home" bash "$setup_script" install-assets "$project_root"
 cmp "$assets_home/.local/share/termux-ai/web/menu.sh" "$project_root/scripts/web-menu.sh"
 cmp "$assets_home/.local/share/termux-ai/tools/embeddinggemma_cli.py" "$project_root/scripts/embeddinggemma_cli.py"
 cmp "$assets_home/.local/share/termux-ai/tools/embeddinggemma_web.py" "$project_root/scripts/embeddinggemma_web.py"
+cmp "$assets_home/.local/share/termux-ai/tools/embeddinggemma_auth.py" "$project_root/scripts/embeddinggemma_auth.py"
 cmp "$assets_home/.local/bin/embeddinggemma" "$project_root/scripts/embeddinggemma-launcher.sh"
+cmp "$assets_home/.local/bin/ia-handoff" "$project_root/scripts/handoff.sh"
+test -x "$assets_home/.local/bin/ia-handoff" || fail_test 'the handoff command is not executable in the guest'
 assert_equal "$(readlink "$assets_home/.local/bin/embedding")" embeddinggemma 'installs the guest compatibility link'
 for hub_file in util.mjs agents.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
     cmp "$assets_home/.local/share/termux-ai/hub/$hub_file" "$project_root/scripts/hub/$hub_file"
@@ -555,6 +589,46 @@ if compgen -G "$panel_state/web/*.pid" > /dev/null; then
     fail_test 'left a service marker after stopping everything'
 fi
 printf '%s\n' 'PASS real panel service: private token, loopback terminal bridge, restarts, port conflicts and token rotation'
+
+# Terminal com menu: so atende com o token no caminho; uma instancia antiga sem token e substituida.
+terminal_out="$(run_panel_webui start terminal)"
+terminal_token="$(< "$panel_state/web/token")"
+grep -Fq -- "-i lo -p 7680 -b /$terminal_token/menu -W -O -m 1 " "$TERMUX_AI_TEST_TTYD_ARGS" \
+    || fail_test "the menu terminal is not behind the token: $(< "$TERMUX_AI_TEST_TTYD_ARGS")"
+grep -Fxq "Terminal: http://127.0.0.1:7680/$terminal_token/menu/" <<< "$terminal_out" || fail_test "the terminal link is missing: $terminal_out"
+if run_panel_webui status | grep -Fq "$terminal_token"; then
+    fail_test 'the general status printed the token'
+fi
+run_panel_webui status terminal | grep -Fq "http://127.0.0.1:7680/$terminal_token/menu/" || fail_test 'status terminal did not show the link'
+run_panel_webui stop terminal > /dev/null
+(
+    cd "$panel_work"
+    env HOME="$panel_home" PATH="$real_path" nohup bash "$panel_home/.local/bin/ttyd" -i lo -p 7680 -W -O -m 1 \
+        /bin/bash menu.sh < /dev/null > /dev/null 2>&1 &
+    printf '%s\n' "$!" > "$panel_state/web/terminal.pid"
+)
+legacy_pid="$(< "$panel_state/web/terminal.pid")"
+for _ in {1..50}; do
+    grep -Fq -- '-p 7680 -W' "$TERMUX_AI_TEST_TTYD_ARGS" 2> /dev/null && break
+    sleep 0.1
+done
+terminal_out="$(run_panel_webui start terminal)"
+grep -Fq 'rodava sem token' <<< "$terminal_out" || fail_test "an old terminal without token was kept: $terminal_out"
+! kill -0 "$legacy_pid" 2> /dev/null || fail_test 'the old terminal without token is still running'
+grep -Fq -- "-b /$terminal_token/menu" "$TERMUX_AI_TEST_TTYD_ARGS" || fail_test 'the restarted terminal is not behind the token'
+run_panel_webui stop terminal > /dev/null
+grep -Fq -- '--host 127.0.0.1 --port 8085 --token-file "$web_dir/token"' "$project_root/scripts/webui.sh" \
+    || fail_test 'the EmbeddingGemma service is started without the token file'
+grep -Fq 'uvicorn.run(protected_app(load_token(args.token_file))' "$project_root/scripts/embeddinggemma_web.py" \
+    || fail_test 'the EmbeddingGemma web server runs without the token gate'
+grep -Fq 'uvicorn.run(embeddinggemma_web.protected_app(token)' "$project_root/scripts/embeddinggemma_cli.py" \
+    || fail_test 'embeddinggemma serve runs without the token gate'
+if grep -En 'uvicorn\.run\((embeddinggemma_web\.)?app[,)]' "$project_root"/scripts/*.py; then
+    fail_test 'an EmbeddingGemma server is started without the token gate'
+fi
+PYTHONPYCACHEPREFIX="$test_root/pycache" python3 -I "$project_root/tests/embedding_auth_test.py"
+PYTHONPYCACHEPREFIX="$test_root/pycache" python3 -I -W ignore "$project_root/tests/embedding_web_test.py"
+printf '%s\n' 'PASS menu terminal and EmbeddingGemma require the token, and old instances without it are replaced'
 
 # O tmux do painel vive no PRoot que iniciou o painel e nenhuma outra instancia o alcanca ("access not allowed", com
 # codigo de saida 0). Por isso "stop" encerra o tmux pelo PID e "start" so descarta o que sobrou de um painel parado.
@@ -2321,7 +2395,9 @@ test -f "$test_root/home/.local/share/termux-ai/container.managed"
 cmp "$test_root/prefix/bin/ia" "$test_root/home/.local/share/termux-ai/bin/ia"
 printf '%s\n' 'PASS adoption undo from the README restores the manual setup and repeats safely'
 
-for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma-launcher.sh scripts/add-opencode-ubuntu.sh scripts/hub/attach.sh tests/run.sh; do
+env -i PATH="$clean_path" bash "$project_root/tests/handoff.sh"
+
+for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma_auth.py tests/embedding_auth_test.py tests/embedding_web_test.py scripts/embeddinggemma-launcher.sh scripts/add-opencode-ubuntu.sh scripts/hub/attach.sh scripts/handoff.sh tests/run.sh tests/handoff.sh; do
     if [[ $relative_path != *.py ]]; then
         bash -n "$project_root/$relative_path"
     fi
@@ -2338,6 +2414,7 @@ for relative_path in scripts/hub/util.mjs scripts/hub/agents.mjs scripts/hub/orc
 done
 PYTHONPYCACHEPREFIX="$test_root/pycache" python3 -m py_compile "$project_root/scripts/embeddinggemma_web.py"
 PYTHONPYCACHEPREFIX="$test_root/pycache" python3 -m py_compile "$project_root/scripts/embeddinggemma_cli.py"
+PYTHONPYCACHEPREFIX="$test_root/pycache" python3 -m py_compile "$project_root/scripts/embeddinggemma_auth.py"
 python3 "$project_root/scripts/embeddinggemma_cli.py" --version > "$test_root/embedding-version.log"
 assert_equal "$(< "$test_root/embedding-version.log")" 2.0.0 'runs the version command without loading model dependencies'
 expect_failure 'EmbeddingGemma server accepted a non-loopback host' python3 "$project_root/scripts/embeddinggemma_cli.py" serve --host 0.0.0.0

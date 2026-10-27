@@ -11,7 +11,7 @@ GitHub Copilot &middot; Claude Code &middot; Codex &middot; Antigravity &middot;
 ![Arquiteturas de 64 bits](https://img.shields.io/badge/64_bits-ARM64_%7C_x86__64-0969DA)
 [![Testado no Android](https://img.shields.io/badge/Testado-no_Android-198754)](#compatibilidade)
 
-[Instalar](#instalacao) &middot; [Primeiro uso](#primeiro-uso) &middot; [Na tela](#na-tela) &middot; [Painel](#acesso-pelo-navegador) &middot; [Orquestrar](#orquestracao-de-agentes) &middot; [Hermes](#hermes-agent-opcional) &middot; [Atualizar](#atualizar) &middot; [Diagnostico](#diagnostico) &middot; [Compatibilidade](#compatibilidade) &middot; [Ajuda](#ajuda)
+[Instalar](#instalacao) &middot; [Primeiro uso](#primeiro-uso) &middot; [Na tela](#na-tela) &middot; [Painel](#acesso-pelo-navegador) &middot; [Orquestrar](#orquestracao-de-agentes) &middot; [Hermes](#hermes-agent-opcional) &middot; [Continuar em outro aparelho](#continuar-em-outro-aparelho) &middot; [Atualizar](#atualizar) &middot; [Diagnostico](#diagnostico) &middot; [Compatibilidade](#compatibilidade) &middot; [Ajuda](#ajuda) &middot; [English](README.en.md)
 
 </div>
 
@@ -142,19 +142,20 @@ ia web
 Isso inicia o **painel de agentes** e abre o link no navegador do aparelho. O
 link tem o formato `http://127.0.0.1:7690/<token>/`. Se o navegador nao abrir
 sozinho, copie o link exibido ou use `ia web abrir`. Quando o EmbeddingGemma
-opcional estiver instalado, sua interface sobe junto em `http://127.0.0.1:8085`.
+opcional estiver instalado, sua interface sobe junto em
+`http://127.0.0.1:8085/<token>/`, com o mesmo token.
 
 | Comando | O que faz |
 | --- | --- |
 | `ia web` | Inicia o painel (e o EmbeddingGemma, se instalado) |
 | `ia web abrir` | Inicia o painel e abre o link no navegador |
-| `ia web status` | Mostra o que esta ativo; `ia web status painel` inclui o link |
+| `ia web status` | Mostra o que esta ativo; `ia web status painel` (ou `terminal`, `embedding`) inclui o link |
 | `ia web stop` | Encerra os servicos e as sessoes dos agentes, e libera o wake-lock |
-| `ia web start terminal` | Inicia so o terminal Linux com menu em `http://127.0.0.1:7680`, sem token |
+| `ia web start terminal` | Inicia so o terminal Linux com menu em `http://127.0.0.1:7680/<token>/menu/` |
 
 `start`, `stop` e `status` aceitam um alvo: `painel`, `terminal`, `embedding` ou
 `todos`; por exemplo, `ia web stop painel`. O terminal com menu so sobe quando
-pedido, porque nao tem token.
+pedido, porque da acesso a um shell completo.
 
 O comando volta assim que o painel esta no ar, e os servicos seguem em segundo
 plano ate `ia web stop`. Se o inicio passar de 180 s, o `ia web` para de esperar
@@ -182,8 +183,10 @@ modo [Pedir aprovacao](#codex-no-android). Sao ate 6 sessoes ao mesmo tempo, e o
 painel recusa novas quando a memoria livre fica abaixo de 512 MB.
 
 > [!IMPORTANT]
-> O painel escuta **somente em 127.0.0.1** e todo acesso exige o token do link.
-> Quem tiver o link controla os agentes e os terminais do painel: nao o
+> O painel, o terminal com menu e o EmbeddingGemma escutam **somente em
+> 127.0.0.1** e todo acesso exige o token do link. O token importa porque, no
+> Android, **outros apps instalados no aparelho tambem alcancam 127.0.0.1**.
+> Quem tiver o link controla os agentes e os terminais: nao o
 > compartilhe nem o publique em capturas de tela. Para trocar o token, encerre o
 > painel e apague o arquivo; o proximo `ia web` gera outro.
 
@@ -214,7 +217,9 @@ ia web
 
 O painel, o terminal com menu e o EmbeddingGemma escutam **somente em
 127.0.0.1** e nao aceitam conexoes de outros aparelhos no Wi-Fi; nao altere o
-endereco de escuta para `0.0.0.0`. O instalador inclui `ttyd`, `tmux` e Node.js
+endereco de escuta para `0.0.0.0`. Os tres exigem o mesmo token; um servico de
+versao anterior que ainda rode sem token e reiniciado no proximo `ia web start`.
+O instalador inclui `ttyd`, `tmux` e Node.js
 no Linux, e `ia web` aciona `termux-wake-lock` automaticamente quando disponivel,
 evitando que o Android suspenda os servicos ao alternar para o navegador
 (`ia web stop` libera o wake-lock).
@@ -230,7 +235,10 @@ ia embeddinggemma install
 Esse comando instala Python e as dependencias opcionais (`sentence-transformers`,
 `fastapi` e `uvicorn`) no Linux. Reserve alguns GiB; a primeira inferencia baixa
 o modelo (cerca de 1,5 GiB) e pode levar mais tempo. Busca de arquivos fica
-restrita a pasta atual de onde `ia web` foi iniciado.
+restrita a pasta atual de onde `ia web` foi iniciado. Programas que usam o
+endpoint compativel com OpenAI (`http://127.0.0.1:8085/v1/embeddings`) devem
+enviar `Authorization: Bearer <token>`; o token fica em
+`~/.local/share/termux-ai/web/token`, dentro do Linux.
 
 ## Primeiro uso
 
@@ -450,6 +458,67 @@ opcao `10` do menu; sem a instalacao, o comando apenas avisa como instalar.
 No painel e na orquestracao, o Hermes usa so as ferramentas `web` e `search`:
 ele nao le nem altera os arquivos do projeto. Ele aparece em `ia versoes` e em
 `ia diagnostico` (versao e login, sem exibir chaves).
+
+## Continuar em outro aparelho
+
+> [!NOTE]
+> **Experimental.** Os testes automatizados cobrem repositorios locais, mas o
+> recurso ainda nao foi validado em Android/PRoot. Teste primeiro com um projeto
+> sem dados sensiveis.
+
+Comecou no celular e quer continuar no tablet? O handoff leva **o trabalho**, nao a
+conversa: seus arquivos alterados e uma nota de continuidade, em um branch dedicado
+do seu repositorio **privado** no GitHub. Funciona com qualquer um dos agentes e
+permite trocar de agente no meio do caminho.
+
+**Uma vez, em cada aparelho** (`ia terminal`): conecte o GitHub e configure o git.
+
+```sh
+gh auth login
+git config --global user.name "Seu Nome"
+git config --global user.email "voce@exemplo.com"
+```
+
+**No aparelho de origem**, dentro do projeto (o remoto `origin` deve ser um repositorio privado do GitHub):
+
+```sh
+ia handoff --dry-run                      # mostra o que seria enviado, sem enviar
+ia handoff --note "Proximo passo: testar o login"
+```
+
+**No outro aparelho**, dentro do mesmo repositorio clonado:
+
+```sh
+ia continuar
+```
+
+O trabalho volta como alteracoes nao confirmadas em um branch novo
+`ia/continuar/...`, e a nota fica em `.ia/HANDOFF.md`. Abra o agente e peca:
+"Leia .ia/HANDOFF.md e continue o trabalho". Revise `git status` e `git diff`
+antes de executar qualquer coisa.
+
+<details>
+<summary>O que protege voce, e o que nao protege</summary>
+
+**Protecoes (cobertas por testes):**
+
+- So envia se o GitHub confirmar que o repositorio e privado. Remoto publico ou nao verificavel e recusado.
+- Seu branch, arquivos e indice nao sao alterados, e os commits sao montados sem hooks. Nunca usa force-push e so escreve em `ia/handoff/*`, em um branch novo.
+- Nao envia `.env*`, chaves, `.npmrc`, bancos locais, `node_modules` nem as pastas de credenciais dos agentes. Os arquivos excluidos sao listados na previa.
+- Varre tokens e chaves de formato conhecido (GitHub, Anthropic, OpenAI, AWS, Google, Slack, chaves privadas, JWT, credenciais em URL) nos arquivos alterados, nos commits locais ainda nao publicados e na nota. Se achar algo, aborta sem mostrar o valor.
+- Ao continuar, recusa handoffs de outra identidade git e nao sobrescreve alteracoes pendentes.
+
+**Limites:**
+
+- A varredura e uma rede de seguranca, **nao uma garantia**: uma senha em texto comum passa. Mantenha o `.gitignore` em dia.
+- Privado nao significa so seu: colaboradores do repositorio enxergam os branches `ia/handoff/*`. Apague-os quando terminar: `git push origin --delete ia/handoff/<aparelho>/<data>`.
+- A checagem de autoria evita engano (por exemplo, retomar o handoff de um colega), mas o e-mail de um commit pode ser forjado por quem tem acesso de escrita. Trate o branch como qualquer codigo de colaboradores.
+- Nao leva a conversa do agente, apenas o estado do trabalho e a nota. Nao e em tempo real.
+- Outros remotos alem do GitHub exigem `--allow-unverified-remote`, por sua conta e risco.
+
+Detalhes e limitacoes da instalacao: [SECURITY.md](SECURITY.md).
+
+</details>
 
 ## Como funciona
 
@@ -725,6 +794,9 @@ logs ou capturas. Informe se e uma instalacao nova ou uma atualizacao.
 
 ## Seguranca e backups
 
+Para relatar uma vulnerabilidade de forma privada e conhecer as limitacoes
+conhecidas da instalacao, leia [SECURITY.md](SECURITY.md).
+
 > [!WARNING]
 > **PRoot nao e um sandbox de seguranca.** Os agentes podem acessar arquivos
 > disponiveis ao Termux. Revise as permissoes e mantenha backups dos projetos.
@@ -738,9 +810,9 @@ cada comando ou edicao.
 Digite chaves somente no prompt oficial do agente. Nao publique credenciais,
 logs privados ou backups. No OpenCode, as credenciais ficam em
 `~/.local/share/opencode/auth.json`, dentro do Linux em que ele roda.
-O terminal web com menu (`ia web start terminal`, sem token) e as sessoes do
+O terminal web com menu (`ia web start terminal`) e as sessoes do
 painel concedem ao usuario da sessao os mesmos acessos que um shell Linux local;
-mantenha-os em `127.0.0.1`, trate o link do painel como uma senha e encerre tudo
+mantenha-os em `127.0.0.1`, trate os links com token como uma senha e encerre tudo
 com `ia web stop` ao terminar (isso tambem encerra as sessoes dos agentes do
 painel).
 
@@ -795,7 +867,7 @@ login e uma tarefa controlada em cada agente, sem publicar dados pessoais.
 
 ---
 
-Projeto independente de integracao. Termux, as CLIs e os servicos de IA
+Projeto independente de integracao, sob a [licenca MIT](LICENSE). Termux, as CLIs e os servicos de IA
 continuam sujeitos as licencas e condicoes dos respectivos fornecedores.
 
 **Mais gente criando com IA no Android.** Marque este repositorio com uma

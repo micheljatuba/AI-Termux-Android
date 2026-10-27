@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Annotated
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from embeddinggemma_auth import DEFAULT_TOKEN_FILE, TokenGate, load_token
 from embeddinggemma_cli import (
     MODEL_ID,
     VALID_DIMS,
@@ -200,28 +201,34 @@ button:disabled{opacity:.6}output{display:block;white-space:pre-wrap;overflow-wr
 <div class="row"><label>Resultados <select id="search-top"><option>5</option><option>10</option><option>20</option></select></label><button onclick="searchFiles()">Buscar</button></div><output id="search-out"></output></section>
 <section class="card"><h2>Gerar embedding</h2><label for="embed-text">Texto</label><textarea id="embed-text"></textarea>
 <div class="row"><label>Dimensao <select id="embed-dim"><option>256</option><option>128</option><option>512</option><option>768</option></select></label><button onclick="embedText()">Gerar vetor</button></div><output id="embed-out"></output></section>
-<p class="hint">Modelo: google/embeddinggemma-2 · CPU · endpoint OpenAI compativel em /v1/embeddings</p>
+<p class="hint">Modelo: google/embeddinggemma-2 · CPU · endpoint OpenAI compativel em v1/embeddings, com o cabecalho Authorization: Bearer &lt;token&gt;</p>
 <script>
 async function post(path,data){const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});const b=await r.json();if(!r.ok)throw Error(b.detail||r.statusText);return b}
 async function run(id,fn){const o=document.getElementById(id);o.textContent="Processando...";try{o.textContent=await fn()}catch(e){o.textContent="Erro: "+e.message}}
 function dim(id){return Number(document.getElementById(id).value)}
-function compareText(){return run("compare-out",async()=>{const r=await post("/api/compare",{query:document.getElementById("query").value,document:document.getElementById("document").value,dimensions:dim("compare-dim")});return `Similaridade: ${r.percent}% (score ${r.score.toFixed(4)})`})}
-function searchFiles(){return run("search-out",async()=>{const r=await post("/api/search",{query:document.getElementById("search-query").value,path:document.getElementById("search-path").value,top:Number(document.getElementById("search-top").value),dimensions:256});return r.results.length?r.results.map((x,i)=>`${i+1}. [${x.score.toFixed(4)}] ${x.file}:${x.line}\\n${x.preview}`).join("\\n\\n"):"Nenhum trecho encontrado."})}
-function embedText(){return run("embed-out",async()=>{const r=await post("/v1/embeddings",{input:document.getElementById("embed-text").value,dimensions:dim("embed-dim")});const v=r.data[0].embedding;return `Dimensao: ${v.length}\\nAmostra: ${JSON.stringify(v.slice(0,8))}\\nVetor completo: ${JSON.stringify(v)}`})}
+function compareText(){return run("compare-out",async()=>{const r=await post("api/compare",{query:document.getElementById("query").value,document:document.getElementById("document").value,dimensions:dim("compare-dim")});return `Similaridade: ${r.percent}% (score ${r.score.toFixed(4)})`})}
+function searchFiles(){return run("search-out",async()=>{const r=await post("api/search",{query:document.getElementById("search-query").value,path:document.getElementById("search-path").value,top:Number(document.getElementById("search-top").value),dimensions:256});return r.results.length?r.results.map((x,i)=>`${i+1}. [${x.score.toFixed(4)}] ${x.file}:${x.line}\\n${x.preview}`).join("\\n\\n"):"Nenhum trecho encontrado."})}
+function embedText(){return run("embed-out",async()=>{const r=await post("v1/embeddings",{input:document.getElementById("embed-text").value,dimensions:dim("embed-dim")});const v=r.data[0].embedding;return `Dimensao: ${v.length}\\nAmostra: ${JSON.stringify(v.slice(0,8))}\\nVetor completo: ${JSON.stringify(v)}`})}
 </script>
 </html>"""
+
+
+def protected_app(token):
+    """O app so responde com o token: outros apps do Android tambem alcancam 127.0.0.1."""
+    return TokenGate(app, token)
 
 
 def main():
     parser = argparse.ArgumentParser(description="EmbeddingGemma 2 local web interface")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8085)
+    parser.add_argument("--token-file", default=str(DEFAULT_TOKEN_FILE))
     args = parser.parse_args()
     if args.host not in ("127.0.0.1", "localhost", "::1"):
         parser.error("This server only accepts loopback hosts.")
     if not 1 <= args.port <= 65535:
         parser.error("port must be between 1 and 65535.")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    uvicorn.run(protected_app(load_token(args.token_file)), host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

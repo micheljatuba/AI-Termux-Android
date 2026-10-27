@@ -14,6 +14,10 @@ panel_ttyd_pattern="ttyd -i 127.0.0.1 -p $panel_ttyd_port"
 hub_socket="${TERMUX_AI_HUB_SOCKET:-termux-ai}"
 terminal_pattern='ttyd -i lo -p 7680'
 embedding_pattern='embeddinggemma_web.py --host 127.0.0.1 --port 8085'
+# No Android, outros apps alcancam 127.0.0.1: terminal e embedding exigem o mesmo token do painel.
+# Uma instancia de versao anterior, sem token, e reiniciada em vez de reaproveitada.
+terminal_token_marker=' -b /'
+embedding_token_marker=' --token-file '
 token_pattern='^[0-9a-f]{32}$'
 
 fail() {
@@ -239,21 +243,45 @@ stop_panel() {
     stop_tmux
 }
 
+# Encerra a instancia que ainda roda sem token (versao anterior), para a nova subir protegida.
+stop_without_token() {
+    local name="$1" expected="$2" marker="$3" pid
+    pid="$(service_pid "$name" "$expected")" || return 0
+    tr '\0' ' ' < "/proc/$pid/cmdline" | grep -Fq -- "$marker" && return 0
+    printf '%s rodava sem token (versao anterior); reiniciando com token.\n' "$name"
+    stop_service "$name" "$expected" > /dev/null
+}
+
+terminal_url() {
+    printf 'http://127.0.0.1:7680/%s/menu/\n' "$1"
+}
+
+embedding_url() {
+    printf 'http://127.0.0.1:8085/%s/\n' "$1"
+}
+
 start_terminal() {
+    local token
     command -v ttyd >/dev/null 2>&1 || fail 'ttyd nao encontrado no Linux. Instale com: apt-get install ttyd'
+    token="$(panel_token)"
+    stop_without_token terminal "$terminal_pattern" "$terminal_token_marker" || return 1
     start_service terminal "$terminal_pattern" 7680 \
-        ttyd -i lo -p 7680 -W -O -m 1 -t titleFixed='Termux AI' \
-        /bin/bash "$HOME/.local/share/termux-ai/web/menu.sh"
+        ttyd -i lo -p 7680 -b "/$token/menu" -W -O -m 1 -t titleFixed='Termux AI' \
+        /bin/bash "$HOME/.local/share/termux-ai/web/menu.sh" || return 1
+    printf 'Terminal: %s\n' "$(terminal_url "$token")"
 }
 
 start_embedding() {
-    local python="$HOME/.venv-ai/bin/python3"
+    local python="$HOME/.venv-ai/bin/python3" token
     [[ -x "$python" ]] || fail "Python do EmbeddingGemma nao encontrado: $python"
     "$python" -c 'import fastapi, sentence_transformers, uvicorn' \
         || fail 'Dependencias do EmbeddingGemma incompletas no ambiente virtual.'
+    token="$(panel_token)"
+    stop_without_token embedding "$embedding_pattern" "$embedding_token_marker" || return 1
     TERMUX_AI_SEARCH_ROOT="$PWD" start_service embedding "$embedding_pattern" 8085 \
         "$python" "$HOME/.local/share/termux-ai/tools/embeddinggemma_web.py" \
-        --host 127.0.0.1 --port 8085
+        --host 127.0.0.1 --port 8085 --token-file "$web_dir/token" || return 1
+    printf 'EmbeddingGemma: %s\n' "$(embedding_url "$token")"
 }
 
 start_default() {
@@ -269,7 +297,7 @@ start_default() {
     fi
 }
 
-# O link do painel carrega o token (e uma senha): so aparece quando o painel e pedido pelo nome.
+# Os links carregam o token (e uma senha): so aparecem quando o servico e pedido pelo nome.
 print_status() {
     local name="$1" show_link="${2:-}" expected port pid
     case "$name" in
@@ -283,8 +311,10 @@ print_status() {
         printf 'painel ativo: %s (PID %s)\n' "$(panel_url "$(panel_token)")" "$pid"
     elif [[ $name == painel ]]; then
         printf 'painel ativo (PID %s); para ver o link: ia web status painel\n' "$pid"
+    elif [[ $show_link == link ]]; then
+        printf '%s ativo: %s (PID %s)\n' "$name" "$("${name}_url" "$(panel_token)")" "$pid"
     else
-        printf '%s ativo: http://127.0.0.1:%s (PID %s)\n' "$name" "$port" "$pid"
+        printf '%s ativo em 127.0.0.1:%s (PID %s); para ver o link: ia web status %s\n' "$name" "$port" "$pid" "$name"
     fi
 }
 
@@ -319,6 +349,6 @@ case "$action:$target" in
         done
         ;;
     status:painel) print_status painel link ;;
-    status:terminal|status:embedding) print_status "$target" ;;
+    status:terminal|status:embedding) print_status "$target" link ;;
     *) fail "Alvo invalido para $action: $target" ;;
 esac

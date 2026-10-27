@@ -26,7 +26,8 @@ show_help() {
         'Antigravity CLI: comandos antigravity ou agy.' \
         'OpenCode: integracao experimental, sem validacao em Android/PRoot.' \
         'Hermes Agent: opcional (cerca de 2 GB); instale com ia atualizar hermes e configure com ia hermes setup.' \
-        'EmbeddingGemma 2: embeddings locais e opcionais via embeddinggemma ou embedding.'
+        'EmbeddingGemma 2: embeddings locais e opcionais via embeddinggemma ou embedding.' \
+        'Handoff (experimental): ia handoff envia o trabalho para um branch privado; ia continuar o retoma em outro aparelho.'
 }
 
 display_name() {
@@ -688,16 +689,12 @@ manage_web() {
         stop) (( status != 0 )) || update_web_wake_lock stop "$target" "$web_log" ;;
     esac
     if (( status == 0 )) && [[ $stage_action == start ]]; then
-        if grep -Eq '^terminal (iniciado em|ja esta ativo)' "$web_log"; then
-            printf '%s\n' 'Terminal: http://127.0.0.1:7680'
-        fi
-        if grep -Eq '^embedding (iniciado em|ja esta ativo)' "$web_log"; then
-            printf '%s\n' 'EmbeddingGemma: http://127.0.0.1:8085'
-        fi
         printf '%s\n' 'Acesso restrito a este aparelho (127.0.0.1). Para encerrar: ia web stop'
+        if grep -Eq '^(Painel|Terminal|EmbeddingGemma): http://127\.0\.0\.1:[0-9]+/[0-9a-f]{32}/' "$web_log"; then
+            printf '%s\n' 'Os links tem um token de acesso: trate-os como uma senha.'
+        fi
         panel_line="$(grep -Eo '^Painel: http://127\.0\.0\.1:7690/[0-9a-f]{32}/$' "$web_log" | head -n 1)" || true
         if [[ -n $panel_line ]]; then
-            printf '%s\n' 'O link do painel tem um token de acesso: trate-o como uma senha.'
             if [[ $action == abrir || ( -t 1 && ${TERMUX_AI_NO_OPEN:-} != 1 ) ]]; then
                 open_panel "${panel_line#Painel: }"
             fi
@@ -793,6 +790,14 @@ case "$tool_name" in
     codex|copilot|claude|opencode|hermes) ;;
     antigravity|agy) tool_name=agy ;;
     embeddinggemma|embedding) tool_name=embeddinggemma ;;
+    handoff)
+        set -- handoff "$@"
+        tool_name=ia-handoff
+        ;;
+    continuar|continue)
+        set -- continue "$@"
+        tool_name=ia-handoff
+        ;;
     terminal|linux|ubuntu)
         tool_name=/bin/bash
         set -- -l "$@"
@@ -832,6 +837,9 @@ fi
 guest_script='export TERMUX_AI_GUEST=1; export PATH="$HOME/.local/bin:$PATH"; exec "$@"'
 if [[ $tool_name == hermes ]]; then
     guest_script='export TERMUX_AI_GUEST=1; export PATH="$HOME/.local/bin:$PATH"; if ! command -v "$1" >/dev/null 2>&1; then echo "Hermes Agent nao esta instalado (e opcional). No Termux, rode: ia atualizar hermes" >&2; exit 127; fi; exec "$@"'
+fi
+if [[ $tool_name == ia-handoff ]]; then
+    guest_script='export TERMUX_AI_GUEST=1; export PATH="$HOME/.local/bin:$PATH"; if ! command -v "$1" >/dev/null 2>&1; then echo "Handoff nao instalado no Linux. No Termux: cd ~/AI-Termux-Android && git pull --ff-only && bash install.sh" >&2; exit 127; fi; exec "$@"'
 fi
 
 exec proot-distro "${login_args[@]}" --work-dir "$PWD" -- \
