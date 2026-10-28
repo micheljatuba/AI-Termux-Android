@@ -474,7 +474,7 @@ cmp "$assets_home/.local/bin/embeddinggemma" "$project_root/scripts/embeddinggem
 cmp "$assets_home/.local/bin/ia-handoff" "$project_root/scripts/handoff.sh"
 test -x "$assets_home/.local/bin/ia-handoff" || fail_test 'the handoff command is not executable in the guest'
 assert_equal "$(readlink "$assets_home/.local/bin/embedding")" embeddinggemma 'installs the guest compatibility link'
-for hub_file in util.mjs agents.mjs jev.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
+for hub_file in util.mjs agents.mjs jev.mjs models.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
     cmp "$assets_home/.local/share/termux-ai/hub/$hub_file" "$project_root/scripts/hub/$hub_file"
 done
 printf '%s\n' 'PASS Linux guest assets and optional command installation'
@@ -599,8 +599,17 @@ fi
 printf '%s\n' 'PASS real panel service: private token, loopback terminal bridge, restarts, port conflicts and token rotation'
 
 # Terminal com menu: so atende com o token no caminho; uma instancia antiga sem token e substituida.
+# O ttyd de mentira grava os argumentos so depois de iniciar: espera a gravacao antes de conferir.
+wait_ttyd_args() {
+    for _ in {1..50}; do
+        grep -Fq -- "$1" "$TERMUX_AI_TEST_TTYD_ARGS" 2> /dev/null && return 0
+        sleep 0.1
+    done
+    return 1
+}
 terminal_out="$(run_panel_webui start terminal)"
 terminal_token="$(< "$panel_state/web/token")"
+wait_ttyd_args '-i lo -p 7680 -b /' || fail_test 'the menu terminal did not start'
 grep -Fq -- "-i lo -p 7680 -b /$terminal_token/menu -W -O -m 1 " "$TERMUX_AI_TEST_TTYD_ARGS" \
     || fail_test "the menu terminal is not behind the token: $(< "$TERMUX_AI_TEST_TTYD_ARGS")"
 grep -Fxq "Terminal: http://127.0.0.1:7680/$terminal_token/menu/" <<< "$terminal_out" || fail_test "the terminal link is missing: $terminal_out"
@@ -616,14 +625,11 @@ run_panel_webui stop terminal > /dev/null
     printf '%s\n' "$!" > "$panel_state/web/terminal.pid"
 )
 legacy_pid="$(< "$panel_state/web/terminal.pid")"
-for _ in {1..50}; do
-    grep -Fq -- '-p 7680 -W' "$TERMUX_AI_TEST_TTYD_ARGS" 2> /dev/null && break
-    sleep 0.1
-done
+wait_ttyd_args '-p 7680 -W' || fail_test 'the old terminal did not start'
 terminal_out="$(run_panel_webui start terminal)"
 grep -Fq 'rodava sem token' <<< "$terminal_out" || fail_test "an old terminal without token was kept: $terminal_out"
 ! kill -0 "$legacy_pid" 2> /dev/null || fail_test 'the old terminal without token is still running'
-grep -Fq -- "-b /$terminal_token/menu" "$TERMUX_AI_TEST_TTYD_ARGS" || fail_test 'the restarted terminal is not behind the token'
+wait_ttyd_args "-b /$terminal_token/menu" || fail_test 'the restarted terminal is not behind the token'
 run_panel_webui stop terminal > /dev/null
 grep -Fq -- '--host 127.0.0.1 --port 8085 --token-file "$web_dir/token"' "$project_root/scripts/webui.sh" \
     || fail_test 'the EmbeddingGemma service is started without the token file'
@@ -1285,7 +1291,7 @@ expect_incomplete_download() {
     test ! -e "$TERMUX_AI_TEST_INSTALL_LOG"
     test ! -e "$HOME/.local"
 }
-for hub_file in util.mjs agents.mjs jev.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
+for hub_file in util.mjs agents.mjs jev.mjs models.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
     held_file="$test_root/held-hub-file"
     mv "$download_copy/scripts/hub/$hub_file" "$held_file"
     expect_incomplete_download "the installer accepted a download without scripts/hub/$hub_file" 'Baixe o repositorio completo'
@@ -2414,7 +2420,7 @@ for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash 
         exit 1
     fi
 done
-for relative_path in scripts/hub/util.mjs scripts/hub/agents.mjs scripts/hub/jev.mjs scripts/hub/orchestrator.mjs scripts/hub/sessions.mjs scripts/hub/server.mjs scripts/hub/cli.mjs scripts/hub/index.html scripts/hub/tmux.conf; do
+for relative_path in scripts/hub/util.mjs scripts/hub/agents.mjs scripts/hub/jev.mjs scripts/hub/models.mjs scripts/hub/orchestrator.mjs scripts/hub/sessions.mjs scripts/hub/server.mjs scripts/hub/cli.mjs scripts/hub/index.html scripts/hub/tmux.conf; do
     if LC_ALL=C grep -q $'\r' "$project_root/$relative_path"; then
         printf 'FAIL: CRLF in %s\n' "$relative_path" >&2
         exit 1
