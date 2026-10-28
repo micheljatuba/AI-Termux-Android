@@ -74,7 +74,7 @@ function fakeSessions() {
   };
 }
 
-async function setup({ ttydPort = 1, runAgent, gate } = {}) {
+async function setup({ ttydPort = 1, runAgent, gate, modelPolicy } = {}) {
   const base = await realpath(await mkdtemp(path.join(os.tmpdir(), 'hub-srv-')));
   const root = path.join(base, 'projetos');
   await mkdir(path.join(root, 'app', 'src'), { recursive: true });
@@ -107,6 +107,7 @@ async function setup({ ttydPort = 1, runAgent, gate } = {}) {
     memInfo: async () => ({ totalMb: 4000, availableMb: 3000 }),
     ttydPort,
     ...(gate ? { gate } : {}),
+    ...(modelPolicy ? { modelPolicy } : {}),
   });
   await new Promise((resolve) => hub.server.listen(0, '127.0.0.1', resolve));
   const port = hub.server.address().port;
@@ -766,6 +767,20 @@ test('frente de decisao (Jev) no servidor: bloqueio recusa, confirmacao exige co
     }
     answer = decided('allow');
     assert.equal((await env.api('POST', '/api/runs', { body: spec })).status, 202);
+  } finally {
+    await env.cleanup();
+  }
+});
+
+test('painel: modelos permitidos vem da configuracao local, nunca do navegador', async () => {
+  const env = await setup({ modelPolicy: async () => ({ claude: ['opus'] }) });
+  try {
+    const started = await env.api('POST', '/api/runs', {
+      body: { mode: 'maestro', prompt: 'Mapear o projeto', dir: 'app', agents: ['claude', 'copilot'], coordinator: 'claude', models: { claude: ['--evil'], copilot: ['x'] } },
+    });
+    assert.equal(started.status, 202);
+    const run = (await env.api('GET', `/api/runs/${started.json.id}`)).json;
+    assert.deepEqual(run.options.models, { claude: ['opus'] });
   } finally {
     await env.cleanup();
   }

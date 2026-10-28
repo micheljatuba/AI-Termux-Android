@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describeAgents, findExecutable } from './agents.mjs';
 import { describeGate, gateTask } from './jev.mjs';
+import { loadModelPolicy } from './models.mjs';
 import { Orchestrator } from './orchestrator.mjs';
 import { SESSION_NAME, Sessions, readMemInfo } from './sessions.mjs';
 import { HubError, clampInt, resolveWithin } from './util.mjs';
@@ -106,6 +107,7 @@ export function createHub({
   now = () => Math.floor(Date.now() / 1000),
   memInfo = readMemInfo,
   gate = async () => ({ status: 'disabled' }),
+  modelPolicy = async () => ({}),
 }) {
   if (!/^[0-9a-f]{32,128}$/.test(token ?? '')) throw new Error('Token invalido: use de 32 a 128 caracteres hexadecimais');
   const sockets = new Set();
@@ -257,8 +259,10 @@ export function createHub({
         const needsConfirmation = verdict.status === 'unavailable' || verdict.decision.verdict !== 'allow';
         if (needsConfirmation && body.confirmed !== true) return sendJson(res, 409, { error: message, jev: 'confirm' });
       }
-      const { confirmed: _confirmed, ...spec } = body;
-      return sendJson(res, 202, { ...orchestrator.start({ ...spec, dir }), serverTime: Date.now() });
+      const { confirmed: _confirmed, models: _models, ...spec } = body;
+      // Modelos permitidos vem so da configuracao local, nunca do navegador.
+      const models = await modelPolicy();
+      return sendJson(res, 202, { ...orchestrator.start({ ...spec, dir, models }), serverTime: Date.now() });
     }
 
     const runRoute = /^\/api\/runs\/([^/]+)(?:\/(cancel|send))?$/.exec(rest);
@@ -425,6 +429,7 @@ async function main() {
     html: await readFile(path.join(HERE, 'index.html'), 'utf8'),
     version: env.TERMUX_AI_VERSION || 'dev',
     gate: (request) => gateTask({ ...request, state, env }),
+    modelPolicy: () => loadModelPolicy(state),
   });
   await new Promise((resolve, reject) => {
     hub.server.once('error', reject);

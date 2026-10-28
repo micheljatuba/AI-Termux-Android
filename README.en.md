@@ -100,6 +100,12 @@ included) and the mode. Only the task text and up to 300 file **names** leave
 the device, never file contents; tasks containing known secrets are never sent.
 If Jev is unreachable, nothing runs without your explicit confirmation.
 
+`ia orquestrar auto "task"` puts it together: Jev decides, Hermes (when
+installed) coordinates and picks the agent and model for each subtask
+(Claude for one part, Codex for another) from the models you allow with
+`ia orquestrar modelos claude opus,sonnet`. You confirm the plan; agents stay
+read-only and propose, you apply.
+
 ## Compatibility and security
 
 Tested on Android without root. PRoot is **not** a security sandbox: agents can

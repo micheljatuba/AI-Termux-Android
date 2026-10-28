@@ -63,6 +63,7 @@ Capturas reais das CLIs oficiais no Android, antes do login:
 | 🤖 | **Cinco agentes, um menu** | `ia` abre o menu; `claude`, `copilot`, `codex`, `agy` e `opencode` abrem direto, sempre na pasta atual. |
 | 🖥️ | **[Painel no navegador](#acesso-pelo-navegador)** | Varios agentes ao vivo lado a lado, com terminal interativo em cada cartao. Envie a mesma pergunta para todos de uma vez. |
 | 🎼 | **[Orquestracao](#orquestracao-de-agentes)** | Compare respostas, encadeie *planejar &rarr; implementar &rarr; revisar* ou deixe um "maestro" dividir a tarefa entre os agentes. Somente leitura: nada e alterado sem voce. |
+| 🧑‍✈️ | **[Modo auto](#modo-auto-o-jev-decide-o-hermes-conduz)** | O Jev decide, o Hermes coordena e escolhe o agente e o modelo de cada parte: Claude numa, Codex noutra. Voce confirma o plano. *(experimental)* |
 | 📲 | **[Continue em outro aparelho](#continuar-em-outro-aparelho)** | `ia handoff` no celular, `ia continuar` no tablet. Seu trabalho viaja por um branch privado, com qualquer agente. *(experimental)* |
 | 🧭 | **[Frente de decisao](#frente-de-decisao-com-typesafe-jev-opcional)** | Com o TypeSafe Jev, cada tarefa e avaliada antes: risco, clareza e qual agente usar. *(opcional, experimental)* |
 | 🧠 | **[Hermes Agent](#hermes-agent-opcional) e [EmbeddingGemma 2](#embeddinggemma-2-opcional)** | Um agente generalista com memoria e busca semantica local nos seus arquivos, se voce quiser. *(opcionais)* |
@@ -461,6 +462,25 @@ ia orquestrar maestro -a claude,copilot,opencode "Mapear o projeto e listar risc
 | **Comparar** | Os agentes respondem a mesma tarefa em paralelo; um juiz opcional compara as respostas (`-j auto` escolhe o melhor disponivel) |
 | **Pipeline** | Linha de montagem de 2 a 6 etapas (planejar, implementar, revisar); cada etapa recebe a tarefa e o resultado da anterior |
 | **Maestro** | Um coordenador divide a tarefa em ate 6 subtarefas, os agentes as executam em paralelo e ele integra os resultados |
+| **Auto** | O [Jev](#frente-de-decisao-com-typesafe-jev-opcional) decide (risco, clareza e modo) e o **Hermes**, se instalado, coordena: escolhe o agente e o modelo de cada subtarefa e integra o resultado |
+
+### Modo auto: o Jev decide, o Hermes conduz
+
+```sh
+ia orquestrar modelos claude opus,sonnet      # modelos que o coordenador pode escolher
+ia orquestrar auto "Revisar a seguranca do login e propor correcoes"
+```
+
+1. **O Jev decide:** bloqueia tarefas perigosas, pede confirmacao ou mais detalhes e escolhe o modo.
+2. **O Hermes coordena** (ou o agente indicado pelo Jev, se o Hermes nao estiver instalado): divide a tarefa e escolhe, para cada parte, o agente e o modelo.
+3. **Voce ve o plano numa linha e confirma** (`--sim` sem terminal).
+4. Claude, Codex, Copilot, OpenCode e Antigravity executam as partes em paralelo; o Hermes integra a resposta final.
+
+O Hermes so escolhe modelos da lista que voce definir com `ia orquestrar modelos`;
+sem lista, cada agente usa o modelo padrao da sua conta. Aceitam modelo: Claude
+Code (`--model`), Codex (`-m`), Copilot (`--model`) e OpenCode (`-m
+provedor/modelo`). O modo auto exige o Jev ativo e segue em **somente leitura**:
+os agentes propoem, voce aplica.
 
 > [!NOTE]
 > **Somente leitura, sempre.** Na orquestracao os agentes leem e analisam o
@@ -471,6 +491,7 @@ ia orquestrar maestro -a claude,copilot,opencode "Mapear o projeto e listar risc
 | Comando ou opcao | O que faz |
 | --- | --- |
 | `ia orquestrar agentes` | Lista os agentes e o que cada um consegue fazer |
+| `ia orquestrar modelos [agente lista\|limpar]` | Mostra ou define os modelos que o coordenador pode escolher por agente |
 | `ia orquestrar historico` | Lista as ultimas execucoes (as 50 mais recentes ficam salvas) |
 | `ia orquestrar ver ID [--tudo]` | Mostra o resultado de uma execucao; `--tudo` inclui cada etapa |
 | `-d PASTA`, `-t SEGUNDOS`, `--json` | Pasta de trabalho (padrao: a atual), tempo limite por etapa (30 a 1800; padrao 600) e saida em JSON |
@@ -509,7 +530,9 @@ O progresso e o resultado de cada etapa tambem aparecem no painel, na aba
 > validada no aparelho.
 
 Com o [TypeSafe Jev](https://console.typesafe.ai) ativado, toda orquestracao
-(`ia orquestrar` e o painel) passa antes por uma decisao rapida:
+(`ia orquestrar` e o painel) passa antes por uma decisao rapida. No
+[modo auto](#modo-auto-o-jev-decide-o-hermes-conduz), a decisao de modo do Jev
+tambem e aplicada:
 
 | O Jev avalia | O que acontece |
 | --- | --- |

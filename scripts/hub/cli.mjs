@@ -5,13 +5,14 @@ import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { describeAgents, getAgent } from './agents.mjs';
+import { describeAgents, getAgent, supportsModel } from './agents.mjs';
 import { checkJev, describeGate, forgetJevKey, gateTask, loadJevConfig, saveJevConfig, saveJevKey } from './jev.mjs';
+import { loadModelPolicy, saveModelPolicy, withAgentModels } from './models.mjs';
 import { Orchestrator } from './orchestrator.mjs';
 import { HubError, clampInt } from './util.mjs';
 
 const PREFERENCE = ['claude', 'copilot', 'codex', 'agy', 'opencode', 'hermes'];
-const MODE_ALIASES = { comparar: 'compare', compare: 'compare', pipeline: 'pipeline', maestro: 'maestro' };
+const MODE_ALIASES = { comparar: 'compare', compare: 'compare', pipeline: 'pipeline', maestro: 'maestro', auto: 'auto' };
 const MODE_NAMES = { compare: 'comparar', pipeline: 'pipeline', maestro: 'maestro' };
 const ROLE_ALIASES = {
   planejar: 'plan',
@@ -43,12 +44,17 @@ Modos:
   pipeline     Planejar → implementar → revisar, cada etapa com um agente
   maestro      Um coordenador divide a tarefa, os agentes trabalham em paralelo
                e o coordenador integra os resultados
+  auto         O Jev decide (risco, clareza e modo); o Hermes, se instalado,
+               coordena e escolhe o agente e o modelo de cada subtarefa.
+               Mostra o plano e pede confirmação (--sim sem terminal)
 
 Outros comandos:
   agentes      Lista os agentes e o que cada um consegue fazer
   historico    Lista as últimas execuções
   ver ID       Mostra o resultado de uma execução (--tudo mostra cada etapa)
   decidir      Pergunta ao TypeSafe Jev o risco, a clareza e o melhor agente/modo
+  modelos      Modelos permitidos por agente: "modelos claude opus,sonnet";
+               "modelos claude limpar" volta ao padrão da conta
   typesafe     status | configurar | testar | ativar | desativar | esquecer
 
 Frente de decisão (TypeSafe Jev, opcional): com "ia typesafe configurar", toda
@@ -67,6 +73,7 @@ Opções:
   -t, --tempo SEGUNDOS      Tempo limite por etapa (30 a 1800, padrão 600)
       --confirmar           Segue quando o Jev pede confirmação ou mais detalhes
       --sem-jev             Segue quando o Jev está indisponível (nunca ignora um bloqueio)
+      --sim                 Com "auto": executa o plano sem perguntar
       --json                Imprime a execução completa em JSON
       --tudo                Com "ver": inclui a saída de cada etapa
   -h, --ajuda               Mostra esta ajuda
@@ -77,6 +84,7 @@ Exemplos:
   ia orquestrar comparar -a claude,copilot -j auto "Onde fica a validação de login?"
   ia orquestrar pipeline -e planejar:claude,implementar:copilot,revisar:agy "Adicionar cache ao cliente HTTP"
   ia orquestrar maestro -a claude,copilot,opencode "Mapear o projeto e listar riscos"
+  ia orquestrar auto "Revisar a segurança do login e propor correções"
   git diff | ia orquestrar comparar -a claude,copilot -j auto -`;
 
 const OPTIONS = {
@@ -91,6 +99,7 @@ const OPTIONS = {
   tudo: { type: 'boolean' },
   confirmar: { type: 'boolean' },
   'sem-jev': { type: 'boolean' },
+  sim: { type: 'boolean' },
   ajuda: { type: 'boolean', short: 'h' },
   help: { type: 'boolean' },
 };
@@ -202,9 +211,57 @@ async function findRun(orchestrator, query) {
   return orchestrator.get((exact ?? matches[0]).id);
 }
 
+// Plano do modo auto: o Jev escolhe o modo; o Hermes (se instalado) coordena e escolhe agente e modelo
+// de cada subtarefa. Os agentes que executam sao os que leem arquivos (o Hermes so planeja e integra).
+export function autoPlan({ route, installed, readers, policy }) {
+  if (readers.length === 0) throw new HubError(400, 'Nenhum agente que lê arquivos está instalado (veja "ia orquestrar agentes")');
+  const hermes = installed.some((agent) => agent.id === 'hermes' && agent.installed && agent.orchestrable);
+  const lead = readers.includes(route.agent) ? route.agent : readers[0];
+  const order = [lead, ...readers.filter((id) => id !== lead)];
+  const coordinator = hermes ? 'hermes' : lead;
+  const label = (id) => getAgent(id)?.label ?? id;
+  const allowed = Object.fromEntries(Object.entries(policy).filter(([agent]) => order.includes(agent)));
+  const modelsText = Object.keys(allowed).length
+    ? ` · modelos: ${Object.entries(allowed).map(([agent, names]) => `${agent} (${names.join(', ')})`).join(', ')}`
+    : ' · modelos: padrão de cada conta';
+  let spec;
+  let text;
+  if (route.mode === 'compare' && order.length >= 2) {
+    spec = { mode: 'compare', agents: order.slice(0, 3), judge: coordinator };
+    text = `comparar · ${spec.agents.map(label).join(', ')} · juiz ${label(coordinator)}`;
+  } else if (route.mode === 'pipeline') {
+    spec = { mode: 'pipeline', steps: ROLE_ORDER.map((role, index) => ({ role, agent: order[index % order.length] })) };
+    text = `pipeline · ${spec.steps.map((step) => `${step.role === 'plan' ? 'planejar' : step.role === 'implement' ? 'implementar' : 'revisar'}: ${label(step.agent)}`).join(' → ')}`;
+  } else {
+    const maxTasks = route.mode === 'direct' ? 1 : 4;
+    spec = { mode: 'maestro', agents: order, coordinator, maxTasks, models: allowed };
+    text = `maestro · coordenador ${label(coordinator)} · agentes ${order.map(label).join(', ')} · até ${maxTasks} subtarefa${maxTasks > 1 ? 's' : ''}${modelsText}`;
+  }
+  return { spec, summary: `Plano do Jev: ${text} (somente leitura)` };
+}
+
+async function modelsCommand(rest, { state, say }) {
+  const policy = await loadModelPolicy(state);
+  if (rest.length === 0) {
+    say('Modelos permitidos por agente na orquestração (o coordenador escolhe dentro da lista):');
+    for (const agent of describeAgents('').filter((item) => supportsModel(item.id))) {
+      say(`  ${pad(agent.id, 9)} ${policy[agent.id]?.join(', ') ?? '(padrão da conta)'}`);
+    }
+    say('Defina com: ia orquestrar modelos claude opus,sonnet  ·  limpe com: ia orquestrar modelos claude limpar');
+    return 0;
+  }
+  const [agent, list = '', ...extra] = rest;
+  if (extra.length > 0 || !list) throw new HubError(400, 'Uso: ia orquestrar modelos <agente> <modelo1,modelo2> | limpar');
+  const id = String(agent).toLowerCase();
+  const names = list.toLowerCase() === 'limpar' ? [] : list.split(',');
+  const next = withAgentModels(policy, id, names);
+  await saveModelPolicy(state, next);
+  say(next[id] ? `${id}: ${next[id].join(', ')}` : `${id}: padrão da conta`);
+  return 0;
+}
+
 // Frente de decisao: true quando a tarefa pode seguir para os agentes.
-async function passGate({ gate, values, canAsk, ask, warn }) {
-  const result = await gate();
+async function passGate({ result, values, canAsk, ask, warn }) {
   if (result.status === 'disabled') return true;
   warn(describeGate(result));
   if (result.status === 'secret') return false;
@@ -313,6 +370,14 @@ export async function run(
   }
 
   const state = env.TERMUX_AI_HUB_STATE || path.join(os.homedir(), '.local', 'share', 'termux-ai');
+  if (command === 'modelos') {
+    try {
+      return await modelsCommand(rest, { state, say });
+    } catch (error) {
+      warn(`Erro: ${error.message}`);
+      return 2;
+    }
+  }
   if (command === 'typesafe') {
     try {
       return await typesafeCommand(rest[0], { state, env, say, warn, readSecret, stdinIsTTY, fetchImpl });
@@ -415,29 +480,44 @@ export async function run(
               ? `Para seguir: ia ${route.agent ?? 'claude'}`
               : `Para seguir: ia orquestrar ${MODE_NAMES[route.mode]}${route.agent ? ` -a ${route.agent}` : ''} "<tarefa>"`,
           );
+          say('Ou deixe o Jev decidir e o coordenador conduzir: ia orquestrar auto "<tarefa>"');
         }
         return { allow: 0, confirm: 1, unclear: 1, block: 3 }[verdict];
       }
       return result.status === 'secret' ? 3 : 4;
     }
 
-    const allowed = await passGate({
-      gate: () => gate({ task: prompt, dir, agents: installedIds, state, env, fetchImpl }),
-      values,
-      canAsk: stdinIsTTY && !fromStdin,
-      ask,
-      warn,
-    });
-    if (!allowed) return 3;
+    const canAsk = stdinIsTTY && !fromStdin;
+    const verdict = await gate({ task: prompt, dir, agents: installedIds, state, env, fetchImpl });
+    if (mode === 'auto' && verdict.status === 'disabled') {
+      warn('O modo auto precisa do Jev como decisor. Ative com: ia typesafe configurar');
+      return 2;
+    }
+    if (!(await passGate({ result: verdict, values, canAsk, ask, warn }))) return 3;
 
     const defaults = readableAgents(installed);
     if (defaults.length === 0 && !values.agentes && !values.etapas) {
       throw new HubError(400, 'Nenhum agente instalado para orquestrar (veja "ia orquestrar agentes")');
     }
-    const spec = { mode, prompt, dir, timeoutSec: clampInt(values.tempo, 30, 1800, 600) };
+    let spec = { mode, prompt, dir, timeoutSec: clampInt(values.tempo, 30, 1800, 600) };
+    if (mode === 'auto') {
+      const route = verdict.status === 'decided' ? verdict.decision.route : { mode: 'maestro', agent: null };
+      const plan = autoPlan({ route, installed, readers: defaults, policy: await loadModelPolicy(state) });
+      spec = { ...plan.spec, prompt, dir, timeoutSec: spec.timeoutSec };
+      warn(plan.summary);
+      if (!values.sim) {
+        if (!canAsk) {
+          warn('Parado. Para executar este plano sem terminal, repita com --sim.');
+          return 3;
+        }
+        if (!(await ask('Executar este plano?'))) return 3;
+      }
+    }
     if (values.agentes && !splitList(values.agentes).length) throw new HubError(400, 'A lista de agentes está vazia');
     const chosen = values.agentes ? splitList(values.agentes) : defaults;
-    if (mode === 'compare') {
+    if (mode === 'auto') {
+      // o plano do Jev e do coordenador ja definiu agentes, modo e modelos
+    } else if (mode === 'compare') {
       spec.agents = chosen;
       if (values.juiz) spec.judge = values.juiz.toLowerCase() === 'auto' ? defaults[0] : values.juiz.toLowerCase();
     } else if (mode === 'maestro') {
@@ -470,7 +550,7 @@ export async function run(
         warn(`[${clock(Date.now() - started)}] ${icon} ${step.title} — ${STATUS_TEXT[step.status] ?? step.status}${detail}`);
       }
     };
-    warn(`Execução ${run.id} (${MODE_NAMES[mode]}, somente leitura) em ${dir}`);
+    warn(`Execução ${run.id} (${MODE_NAMES[spec.mode]}, somente leitura) em ${dir}`);
     orch.on('update', report);
     report(run);
     const onInterrupt = () => {
