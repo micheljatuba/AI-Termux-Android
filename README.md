@@ -2,42 +2,101 @@
 
 # AI Termux Android
 
-**Programe com IA direto do seu Android.**
+### Seu Android virou uma estacao de programacao com IA.
 
+**Cinco agentes de IA de verdade, um menu, nenhum PC.**
 GitHub Copilot &middot; Claude Code &middot; Codex &middot; Antigravity &middot; OpenCode &middot; Hermes (opcional)
 
 [![Shell Checks](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml/badge.svg)](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml)
 ![Android 11 ou superior](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)
+![Sem root](https://img.shields.io/badge/root-nao_precisa-198754)
 ![Arquiteturas de 64 bits](https://img.shields.io/badge/64_bits-ARM64_%7C_x86__64-0969DA)
-[![Testado no Android](https://img.shields.io/badge/Testado-no_Android-198754)](#compatibilidade)
+[![Licenca MIT](https://img.shields.io/badge/licenca-MIT-blue)](LICENSE)
+[![Seguranca](https://img.shields.io/badge/seguranca-politica_publica-8250df)](SECURITY.md)
 
-[Instalar](#instalacao) &middot; [Primeiro uso](#primeiro-uso) &middot; [Na tela](#na-tela) &middot; [Painel](#acesso-pelo-navegador) &middot; [Orquestrar](#orquestracao-de-agentes) &middot; [TypeSafe](#frente-de-decisao-com-typesafe-jev-opcional) &middot; [Hermes](#hermes-agent-opcional) &middot; [Continuar em outro aparelho](#continuar-em-outro-aparelho) &middot; [Atualizar](#atualizar) &middot; [Diagnostico](#diagnostico) &middot; [Compatibilidade](#compatibilidade) &middot; [Ajuda](#ajuda) &middot; [English](README.en.md)
+<img src="docs/images/menu-android.png" width="720" alt="Menu do AI Termux Android com os agentes, o terminal Linux, o EmbeddingGemma, versoes e atualizacoes, diagnostico, o Hermes Agent opcional e o painel web">
+
+<sub>Digite <code>ia</code>. Escolha o numero. Comece a programar.</sub>
+
+**[Instalar em 3 comandos](#instalacao)** &middot; [Ver funcionando](#veja-funcionando) &middot; [Recursos](#o-que-ele-faz) &middot; [Seguranca](#seguranca-em-primeiro-lugar) &middot; [English](README.en.md)
 
 </div>
 
-Da ideia ao codigo, sem abrir um notebook. Tenha **Copilot, Claude Code, Codex,
-Antigravity e OpenCode** no mesmo ambiente, junto com Git, GitHub CLI e Node.js.
-Escolha seu agente, abra um projeto e continue de onde estiver.
+---
 
-Quer mais? Abra **varios agentes ao mesmo tempo** em um
-[painel no navegador](#acesso-pelo-navegador), [orquestre-os](#orquestracao-de-agentes)
-para comparar respostas, encadear etapas ou dividir uma tarefa e, se quiser,
-instale o [Hermes Agent](#hermes-agent-opcional).
+## Por que isso existe
 
-**Cinco agentes. Um menu. Seus projetos no Android.** Sem root no Android e
-sem depender de um PC no uso diario.
+A ideia aparece no onibus, na fila, longe do computador. Ate agora, programar
+com IA exigia um notebook ou um app preso a um unico provedor.
 
-<p align="center">
-    <img src="docs/images/menu-android.png" width="760" alt="Menu do AI Termux Android com os agentes, o terminal Linux, o EmbeddingGemma, versoes e atualizacoes, diagnostico, o Hermes Agent opcional e o painel web">
-    <br>
-    <sub>Abra com ia. Escolha pelo numero. Comece no seu projeto.</sub>
-</p>
+**AI Termux Android coloca os agentes de linha de comando oficiais dentro do seu
+celular ou tablet**, num Linux de verdade, com Git, GitHub CLI e Node.js. Voce
+abre a pasta do projeto, escolhe o agente e trabalha, e no proximo aparelho
+continua de onde parou.
+
+> **Sem root. Sem PC. Sem cabo USB.** So o Termux, a sua conta no provedor de IA
+> e alguns minutos de instalacao.
+
+## Veja funcionando
+
+Capturas reais das CLIs oficiais no Android, antes do login:
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/claude-entry.png" alt="Claude Code aberto no Android com a escolha do metodo de login"><br><sub><b>Claude Code</b></sub></td>
+    <td width="50%"><img src="docs/images/copilot-entry.png" alt="GitHub Copilot CLI aberto no Android antes do login"><br><sub><b>GitHub Copilot CLI</b></sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/codex-entry.png" alt="Codex aberto no Android com as opcoes de conexao"><br><sub><b>Codex</b></sub></td>
+    <td width="50%"><img src="docs/images/antigravity-entry.png" alt="Antigravity CLI aberto no Android com as opcoes de login Google"><br><sub><b>Google Antigravity CLI</b></sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/opencode-entry.png" alt="OpenCode aberto no Android com a selecao de provedor"><br><sub><b>OpenCode</b></sub></td>
+    <td width="50%"><img src="docs/images/agents-versions.png" alt="Versoes de Copilot, Claude, Codex, Antigravity e OpenCode no Android"><br><sub><b>Os cinco instalados, lado a lado</b></sub></td>
+  </tr>
+</table>
+
+## O que ele faz
+
+| | Recurso | Na pratica |
+| :---: | --- | --- |
+| 🤖 | **Cinco agentes, um menu** | `ia` abre o menu; `claude`, `copilot`, `codex`, `agy` e `opencode` abrem direto, sempre na pasta atual. |
+| 🖥️ | **[Painel no navegador](#acesso-pelo-navegador)** | Varios agentes ao vivo lado a lado, com terminal interativo em cada cartao. Envie a mesma pergunta para todos de uma vez. |
+| 🎼 | **[Orquestracao](#orquestracao-de-agentes)** | Compare respostas, encadeie *planejar &rarr; implementar &rarr; revisar* ou deixe um "maestro" dividir a tarefa entre os agentes. Somente leitura: nada e alterado sem voce. |
+| 📲 | **[Continue em outro aparelho](#continuar-em-outro-aparelho)** | `ia handoff` no celular, `ia continuar` no tablet. Seu trabalho viaja por um branch privado, com qualquer agente. *(experimental)* |
+| 🧭 | **[Frente de decisao](#frente-de-decisao-com-typesafe-jev-opcional)** | Com o TypeSafe Jev, cada tarefa e avaliada antes: risco, clareza e qual agente usar. *(opcional, experimental)* |
+| 🧠 | **[Hermes Agent](#hermes-agent-opcional) e [EmbeddingGemma 2](#embeddinggemma-2-opcional)** | Um agente generalista com memoria e busca semantica local nos seus arquivos, se voce quiser. *(opcionais)* |
+| 🔄 | **[Atualizacoes](#atualizar) e [diagnostico](#diagnostico)** | `ia versoes`, `ia atualizar` e `ia diagnostico` mostram o que esta desatualizado e o que precisa de atencao. |
+
+## Seguranca em primeiro lugar
+
+Agentes de IA tem acesso aos seus arquivos. Por isso o projeto trata seguranca
+como recurso, nao como rodape:
+
+- 🔒 **Servicos locais com token.** Painel, terminal web e EmbeddingGemma escutam so em `127.0.0.1` e exigem um token privado, porque outros apps do Android tambem alcancam `127.0.0.1`.
+- 🛡️ **Nada e desligado escondido.** Sandboxes e aprovacoes dos agentes ficam no padrao de cada fornecedor; o Codex abre no modo *Pedir aprovacao*.
+- 🔑 **Segredos nao vazam.** O handoff so envia para repositorio privado e para ao encontrar tokens ou chaves; a frente de decisao nunca envia o conteudo dos seus arquivos.
+- 🚦 **Falha fechada.** Se uma verificacao nao pode ser feita, nada segue sem a sua confirmacao.
+- 🧪 **Testado de verdade.** Centenas de verificacoes automaticas a cada mudanca, incluindo testes que tentam quebrar as protecoes de proposito.
+
+Detalhes, limites conhecidos e como relatar uma falha: [SECURITY.md](SECURITY.md).
+
+## Comece agora
+
+No [Termux oficial](#1-prepare-o-termux):
+
+```sh
+pkg update && pkg install -y git
+git clone https://github.com/micheljatuba/AI-Termux-Android.git ~/AI-Termux-Android
+cd ~/AI-Termux-Android && bash install.sh
+```
+
+Depois digite `ia`. O passo a passo completo esta em [Instalacao](#instalacao).
 
 **Testado no Android:** instalacao, menu, atalhos e acesso aos cinco agentes
-com login e API. Veja os [requisitos e limites](#compatibilidade).
-
-Os modelos em nuvem precisam de **internet e uma conta no provedor escolhido**.
-Assinaturas, creditos e limites de uso nao estao incluidos neste projeto.
+com login e API. Veja os [requisitos e limites](#compatibilidade). Os modelos em
+nuvem precisam de **internet e uma conta no provedor escolhido**; assinaturas,
+creditos e limites de uso nao estao incluidos neste projeto.
 
 ## O que voce pode criar
 
@@ -46,11 +105,17 @@ Assinaturas, creditos e limites de uso nao estao incluidos neste projeto.
 | Um script que resolve uma tarefa repetitiva | Descreva a tarefa ao agente, revise o codigo e teste no terminal |
 | Um projeto que voce quer entender | Abra a pasta e peca uma explicacao da estrutura e dos pontos principais |
 | Uma correcao que nao pode esperar | Investigue o erro, revise a sugestao e execute os testes do projeto |
-| Uma segunda opiniao sobre seu codigo | Alterne entre os agentes na mesma pasta e compare as propostas |
+| Uma segunda opiniao sobre seu codigo | Rode `ia orquestrar comparar` e veja as propostas de varios agentes lado a lado |
 | Um projeto pronto para compartilhar | Use Git e GitHub CLI para revisar alteracoes e publicar seu trabalho |
 
 O agente muda. **A pasta do projeto continua a mesma.** Cada CLI mantem sua
 propria conta e conversa; voce escolhe a ferramenta para cada etapa.
+
+<div align="center">
+
+**Curtiu? Deixe uma ⭐ para encontrar o projeto depois e ajudar mais gente a descobrir.**
+
+</div>
 
 ## Instalacao
 

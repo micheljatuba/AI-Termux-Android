@@ -2,14 +2,33 @@
 
 # AI Termux Android
 
-**Code with AI agents straight from your Android phone or tablet.**
+### Turn your Android phone into an AI coding workstation.
 
-GitHub Copilot &middot; Claude Code &middot; Codex &middot; Antigravity &middot; OpenCode
+**Five real AI coding agents, one menu, no PC.**
+GitHub Copilot &middot; Claude Code &middot; Codex &middot; Antigravity &middot; OpenCode &middot; Hermes (optional)
 
 [![Shell Checks](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml/badge.svg)](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml)
+![Android 11+](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)
+![No root](https://img.shields.io/badge/root-not_needed-198754)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Security policy](https://img.shields.io/badge/security-policy-8250df)](SECURITY.md)
+
+<img src="docs/images/menu-android.png" width="720" alt="AI Termux Android menu with the agents, the Linux terminal, EmbeddingGemma, versions and updates, diagnostics, the optional Hermes Agent and the web panel">
+
+<sub>Type <code>ia</code>. Pick a number. Start coding.</sub>
 
 </div>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/claude-entry.png" alt="Claude Code on Android before login"><br><sub><b>Claude Code</b></sub></td>
+    <td width="50%"><img src="docs/images/copilot-entry.png" alt="GitHub Copilot CLI on Android before login"><br><sub><b>GitHub Copilot CLI</b></sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/codex-entry.png" alt="Codex on Android with its sign-in options"><br><sub><b>Codex</b></sub></td>
+    <td width="50%"><img src="docs/images/agents-versions.png" alt="Copilot, Claude, Codex, Antigravity and OpenCode versions on Android"><br><sub><b>All five installed</b></sub></td>
+  </tr>
+</table>
 
 Five coding agents, one menu, no root and no PC. The installer sets up a dedicated
 Linux (Debian + Node.js 24 through PRoot) inside Termux with the official CLIs,
@@ -93,3 +112,9 @@ privately and the known limitations of the installation.
 
 [MIT](LICENSE). Termux, the agent CLIs and the AI services remain subject to their
 providers' licenses and terms.
+
+<div align="center">
+
+**Like it? Leave a ⭐ to find it later and help more people discover it.**
+
+</div>
