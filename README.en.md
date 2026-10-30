@@ -106,6 +106,17 @@ installed) coordinates and picks the agent and model for each subtask
 `ia orquestrar modelos claude opus,sonnet`. You confirm the plan; agents stay
 read-only and propose, you apply.
 
+## Local LFM3 (optional, experimental)
+
+`ia lfm3 instalar` installs Termux's `llama-cpp` package (0.8.0 or newer, the
+first with LFM3 support) and downloads Liquid AI's
+[LFM3](https://www.liquid.ai/blog/lfm3) 1.7B model (about 1 to 2 GB) after a
+confirmation. `ia lfm3` then chats fully offline; `ia lfm3 servidor` serves an
+OpenAI-compatible API on `127.0.0.1:8086` that **requires a private token**
+(`ia lfm3 token`) and runs without the llama-server web UI. The model is under
+the LFM Open License v1.0 (free below US$ 10 million annual revenue); read it
+before commercial use.
+
 ## Compatibility and security
 
 Tested on Android without root. PRoot is **not** a security sandbox: agents can

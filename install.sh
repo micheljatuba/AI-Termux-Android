@@ -173,7 +173,7 @@ if (( enable_menu )) && [[ -e "$HOME/.bashrc" || -L "$HOME/.bashrc" ]]; then
         fail 'A configuracao Bash ja abre o menu ia; remova essa chamada ou use --no-menu.'
     fi
 fi
-required_files=(bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma_auth.py scripts/embeddinggemma-launcher.sh scripts/handoff.sh)
+required_files=(bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma_auth.py scripts/embeddinggemma-launcher.sh scripts/handoff.sh scripts/lfm3.sh)
 for hub_file in "${hub_files[@]}"; do
     required_files+=("scripts/hub/$hub_file")
 done
@@ -248,6 +248,7 @@ install -m 644 "$project_root/scripts/embeddinggemma_auth.py" "$state_dir/tools/
 install -m 644 "$project_root/scripts/embeddinggemma_web.py" "$state_dir/tools/embeddinggemma_web.py"
 install -m 644 "$project_root/scripts/webui.sh" "$state_dir/webui.sh"
 install -m 644 "$project_root/scripts/web-menu.sh" "$state_dir/web/menu.sh"
+install -m 644 "$project_root/scripts/lfm3.sh" "$state_dir/lfm3.sh"
 
 if (( adopted )); then
     mkdir -p "$state_dir/adopted/bin"

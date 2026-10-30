@@ -220,6 +220,17 @@ done
 rm "$launcher_state/linux.conf"
 printf '%s\n' 'PASS Linux selection from the installer configuration'
 
+# ia lfm3 roda no Termux, sem entrar no PRoot, e repassa os argumentos ao lfm3.sh instalado.
+rm -f "$TERMUX_AI_TEST_ARGS"
+expect_failure 'ia lfm3 ran without lfm3.sh' bash "$project_root/bin/ia" lfm3 status
+grep -Fq 'LFM3 ausente' "$test_root/expected-failure.log"
+printf 'printf "%%s|" "$@" > "$TERMUX_AI_TEST_ARGS.lfm3"\n' > "$launcher_state/lfm3.sh"
+bash "$project_root/bin/ia" lfm3 servidor --porta 8099
+assert_equal "$(< "$TERMUX_AI_TEST_ARGS.lfm3")" 'servidor|--porta|8099|' 'passes arguments to lfm3.sh'
+test ! -e "$TERMUX_AI_TEST_ARGS"
+rm -f "$launcher_state/lfm3.sh" "$TERMUX_AI_TEST_ARGS.lfm3"
+printf '%s\n' 'PASS ia lfm3 dispatch stays in Termux'
+
 fake_guest="$test_root/fake-guest"
 mkdir -p "$fake_guest/.local/bin" "$fake_guest/.local/share/termux-ai/hub"
 run_in_fake_guest() {
@@ -1337,6 +1348,7 @@ cmp "$state_dir/webui.sh" "$project_root/scripts/webui.sh"
 cmp "$state_dir/web/menu.sh" "$project_root/scripts/web-menu.sh"
 cmp "$state_dir/tools/embeddinggemma_web.py" "$project_root/scripts/embeddinggemma_web.py"
 cmp "$state_dir/tools/embeddinggemma_cli.py" "$project_root/scripts/embeddinggemma_cli.py"
+cmp "$state_dir/lfm3.sh" "$project_root/scripts/lfm3.sh"
 grep -Fqx 'Codex sem sandbox no Android: ia codex abre no modo Pedir aprovacao.' "$test_root/first-install.log"
 grep -Fq 'Use ia diagnostico para conferir logins e protecoes.' "$test_root/first-install.log"
 grep -Fq 'ia atualizar hermes' "$test_root/first-install.log"
@@ -2410,8 +2422,9 @@ cmp "$test_root/prefix/bin/ia" "$test_root/home/.local/share/termux-ai/bin/ia"
 printf '%s\n' 'PASS adoption undo from the README restores the manual setup and repeats safely'
 
 env -i PATH="$clean_path" bash "$project_root/tests/handoff.sh"
+env -i PATH="$clean_path" bash "$project_root/tests/lfm3.sh"
 
-for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma_auth.py tests/embedding_auth_test.py tests/embedding_web_test.py scripts/embeddinggemma-launcher.sh scripts/add-opencode-ubuntu.sh scripts/hub/attach.sh scripts/handoff.sh tests/run.sh tests/handoff.sh; do
+for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma_auth.py tests/embedding_auth_test.py tests/embedding_web_test.py scripts/embeddinggemma-launcher.sh scripts/add-opencode-ubuntu.sh scripts/hub/attach.sh scripts/handoff.sh scripts/lfm3.sh tests/run.sh tests/handoff.sh tests/lfm3.sh; do
     if [[ $relative_path != *.py ]]; then
         bash -n "$project_root/$relative_path"
     fi

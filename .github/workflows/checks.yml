@@ -18,7 +18,7 @@ jobs:
       - name: Install ShellCheck, tmux and ttyd
         run: sudo apt-get update && sudo apt-get install -y shellcheck tmux ttyd
       - name: Check shell scripts
-        run: shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/add-opencode-ubuntu.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma-launcher.sh scripts/hub/attach.sh scripts/handoff.sh tests/run.sh tests/handoff.sh
+        run: shellcheck --severity=warning install.sh bin/ia scripts/setup-linux.sh scripts/add-opencode-ubuntu.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma-launcher.sh scripts/hub/attach.sh scripts/handoff.sh scripts/lfm3.sh tests/run.sh tests/handoff.sh tests/lfm3.sh
       - name: Install FastAPI for the EmbeddingGemma web test
         run: |
           python3 -m venv "$RUNNER_TEMP/venv"

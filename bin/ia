@@ -16,6 +16,7 @@ show_help() {
         '     ia typesafe [status|configurar|testar|ativar|desativar|esquecer]' \
         '     ia web [start|stop|status|abrir] [painel|terminal|embedding|todos]' \
         '     ia embeddinggemma install' \
+        '     ia lfm3 [chat|instalar|servidor|token|status|remover]' \
         'Sem argumentos, abre o menu em uma sessao interativa.' \
         'versoes: compara as versoes instaladas com as mais recentes.' \
         'atualizar: mostra o plano e atualiza os agentes apos confirmacao.' \
@@ -30,6 +31,7 @@ show_help() {
         'OpenCode: integracao experimental, sem validacao em Android/PRoot.' \
         'Hermes Agent: opcional (cerca de 2 GB); instale com ia atualizar hermes e configure com ia hermes setup.' \
         'EmbeddingGemma 2: embeddings locais e opcionais via embeddinggemma ou embedding.' \
+        'LFM3 (Liquid AI): modelo local e opcional, roda no Termux sem internet; instale com ia lfm3 instalar.' \
         'Handoff (experimental): ia handoff envia o trabalho para um branch privado; ia continuar o retoma em outro aparelho.'
 }
 
@@ -775,6 +777,13 @@ if [[ "$launcher_name" == ia ]]; then
         status=0
         run_orchestrate "$@" || status=$?
         exit "$status"
+    elif [[ "$1" == lfm3 ]]; then
+        shift
+        if [[ ! -f "$state_dir/lfm3.sh" ]]; then
+            printf '%s\n' 'LFM3 ausente. No Termux: cd ~/AI-Termux-Android && git pull --ff-only && bash install.sh' >&2
+            exit 1
+        fi
+        exec bash "$state_dir/lfm3.sh" "$@"
     elif [[ "$1" == web ]]; then
         shift
         status=0

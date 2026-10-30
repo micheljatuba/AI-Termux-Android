@@ -114,6 +114,26 @@ externa do TypeSafe (`https://api.typesafe.ai`) antes de rodar os agentes:
   modelo pode errar. Ela nao substitui as permissoes dos agentes nem a sua
   revisao.
 
+## Modelo local LFM3 (opcional, desligado por padrao)
+
+`ia lfm3` roda o LFM3 da Liquid AI no Termux, com o pacote `llama-cpp` do
+repositorio oficial do Termux:
+
+- so instala depois de confirmacao, mostrando a licenca; recusa `llama-cpp`
+  anterior a 0.8.0; aceita apenas repositorios `LiquidAI/LFM3-...-GGUF` e nomes
+  de quantizacao simples;
+- o modelo fica em pasta 700 e a configuracao (arquivo 600) e lida como dados;
+- depois da instalacao, conversa e servidor usam `--offline`;
+- o servidor escuta so em `127.0.0.1`, exige token de 256 bits (arquivo 600) em
+  `Authorization: Bearer` e roda sem a interface web. Rotas de saude e de lista de
+  modelos do `llama-server` podem responder sem token; elas revelam o nome do
+  modelo, nao as conversas.
+
+Limites: o arquivo do modelo e baixado do Hugging Face por HTTPS pelo proprio
+`llama-cpp`, **sem hash fixado por este projeto**: a confianca esta no TLS e na
+conta `LiquidAI`. As respostas de um modelo pequeno podem estar erradas; trate-as
+como rascunho.
+
 ## Limitacoes conhecidas da instalacao
 
 Descritas aqui para que voce possa decidir com informacao completa:

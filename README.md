@@ -67,6 +67,7 @@ Capturas reais das CLIs oficiais no Android, antes do login:
 | 📲 | **[Continue em outro aparelho](#continuar-em-outro-aparelho)** | `ia handoff` no celular, `ia continuar` no tablet. Seu trabalho viaja por um branch privado, com qualquer agente. *(experimental)* |
 | 🧭 | **[Frente de decisao](#frente-de-decisao-com-typesafe-jev-opcional)** | Com o TypeSafe Jev, cada tarefa e avaliada antes: risco, clareza e qual agente usar. *(opcional, experimental)* |
 | 🧠 | **[Hermes Agent](#hermes-agent-opcional) e [EmbeddingGemma 2](#embeddinggemma-2-opcional)** | Um agente generalista com memoria e busca semantica local nos seus arquivos, se voce quiser. *(opcionais)* |
+| ✈️ | **[LFM3 local](#lfm3-local-opcional)** | Um modelo da Liquid AI rodando no proprio aparelho: conversa sem internet e API local compativel com OpenAI, com token. *(opcional, experimental)* |
 | 🔄 | **[Atualizacoes](#atualizar) e [diagnostico](#diagnostico)** | `ia versoes`, `ia atualizar` e `ia diagnostico` mostram o que esta desatualizado e o que precisa de atencao. |
 
 ## Seguranca em primeiro lugar
@@ -581,6 +582,39 @@ opcao `10` do menu; sem a instalacao, o comando apenas avisa como instalar.
 No painel e na orquestracao, o Hermes usa so as ferramentas `web` e `search`:
 ele nao le nem altera os arquivos do projeto. Ele aparece em `ia versoes` e em
 `ia diagnostico` (versao e login, sem exibir chaves).
+
+## LFM3 local (opcional)
+
+O [LFM3](https://www.liquid.ai/blog/lfm3), da Liquid AI, e um modelo pequeno
+(1,7 bilhao de parametros) que roda **no proprio aparelho**: sem conta, sem
+assinatura e, depois de baixado, sem internet. Ele nao substitui os agentes de
+nuvem em tarefas grandes; serve para perguntas rapidas, rascunhos e uso offline
+(no aviao, no metro, sem sinal).
+
+```sh
+ia lfm3 instalar          # pacote llama-cpp do Termux + modelo (cerca de 1 a 2 GB)
+ia lfm3                   # conversa no terminal, offline
+ia lfm3 servidor          # API compativel com OpenAI em http://127.0.0.1:8086/v1
+ia lfm3 token             # token da API (Authorization: Bearer <token>)
+ia lfm3 status
+ia lfm3 remover           # apaga o modelo baixado
+```
+
+- Roda no Termux, fora do Linux do PRoot, com o pacote oficial `llama-cpp`
+  (versao 0.8.0 ou mais nova, a primeira com suporte ao LFM3). Uma versao antiga
+  e recusada com a instrucao `pkg upgrade llama-cpp`.
+- `instalar` confere o espaco livre, avisa quando a RAM e baixa, mostra a
+  licenca e pede confirmacao (`--sim` confirma). `--quant Q4_0` escolhe uma
+  versao menor do modelo.
+- O modelo fica em `~/.local/share/termux-ai/lfm3` (pasta 700). Conversa e
+  servidor usam `--offline`: nada sai do aparelho depois da instalacao.
+- O servidor escuta so em `127.0.0.1`, exige o token (arquivo 600) e roda sem a
+  interface web do `llama-server`, porque outros apps do Android alcancam
+  `127.0.0.1`. `Ctrl+C` encerra.
+
+**Licenca:** LFM Open License v1.0, gratuita para uso pessoal e para empresas
+com receita anual abaixo de US$ 10 milhoes. Leia a licenca na pagina do modelo
+antes de uso comercial.
 
 ## Continuar em outro aparelho
 
