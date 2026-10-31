@@ -1,0 +1,7 @@
+# As actions sao fixadas por SHA (uma tag pode ser movida); o Dependabot propoe as atualizacoes.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

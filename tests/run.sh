@@ -220,6 +220,17 @@ done
 rm "$launcher_state/linux.conf"
 printf '%s\n' 'PASS Linux selection from the installer configuration'
 
+# ia lfm3 roda no Termux, sem entrar no PRoot, e repassa os argumentos ao lfm3.sh instalado.
+rm -f "$TERMUX_AI_TEST_ARGS"
+expect_failure 'ia lfm3 ran without lfm3.sh' bash "$project_root/bin/ia" lfm3 status
+grep -Fq 'LFM3 ausente' "$test_root/expected-failure.log"
+printf 'printf "%%s|" "$@" > "$TERMUX_AI_TEST_ARGS.lfm3"\n' > "$launcher_state/lfm3.sh"
+bash "$project_root/bin/ia" lfm3 servidor --porta 8099
+assert_equal "$(< "$TERMUX_AI_TEST_ARGS.lfm3")" 'servidor|--porta|8099|' 'passes arguments to lfm3.sh'
+test ! -e "$TERMUX_AI_TEST_ARGS"
+rm -f "$launcher_state/lfm3.sh" "$TERMUX_AI_TEST_ARGS.lfm3"
+printf '%s\n' 'PASS ia lfm3 dispatch stays in Termux'
+
 fake_guest="$test_root/fake-guest"
 mkdir -p "$fake_guest/.local/bin" "$fake_guest/.local/share/termux-ai/hub"
 run_in_fake_guest() {
@@ -261,6 +272,14 @@ run_in_fake_guest "$launch_script" ia-handoff continue > "$test_root/handoff-mis
 assert_equal "$launch_status" 127 'a missing handoff ends with the command-not-found status'
 grep -Fq 'bash install.sh' "$test_root/handoff-missing.log"
 printf '%s\n' 'PASS handoff dispatch and update hint'
+
+for decision_command in decidir typesafe; do
+    bash "$project_root/bin/ia" "$decision_command" 'two words'
+    mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
+    assert_equal "${actual_args[11]}" "$decision_command" "routes ia $decision_command to the panel CLI in the guest"
+    assert_equal "${actual_args[12]}" 'two words' "keeps the ia $decision_command argument"
+done
+printf '%s\n' 'PASS TypeSafe decision commands run inside the Linux guest'
 
 bash "$project_root/bin/ia" orquestrar comparar --agentes claude,copilot 'two words'
 mapfile -d '' -t actual_args < "$TERMUX_AI_TEST_ARGS"
@@ -466,7 +485,7 @@ cmp "$assets_home/.local/bin/embeddinggemma" "$project_root/scripts/embeddinggem
 cmp "$assets_home/.local/bin/ia-handoff" "$project_root/scripts/handoff.sh"
 test -x "$assets_home/.local/bin/ia-handoff" || fail_test 'the handoff command is not executable in the guest'
 assert_equal "$(readlink "$assets_home/.local/bin/embedding")" embeddinggemma 'installs the guest compatibility link'
-for hub_file in util.mjs agents.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
+for hub_file in util.mjs agents.mjs jev.mjs models.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
     cmp "$assets_home/.local/share/termux-ai/hub/$hub_file" "$project_root/scripts/hub/$hub_file"
 done
 printf '%s\n' 'PASS Linux guest assets and optional command installation'
@@ -591,8 +610,17 @@ fi
 printf '%s\n' 'PASS real panel service: private token, loopback terminal bridge, restarts, port conflicts and token rotation'
 
 # Terminal com menu: so atende com o token no caminho; uma instancia antiga sem token e substituida.
+# O ttyd de mentira grava os argumentos so depois de iniciar: espera a gravacao antes de conferir.
+wait_ttyd_args() {
+    for _ in {1..50}; do
+        grep -Fq -- "$1" "$TERMUX_AI_TEST_TTYD_ARGS" 2> /dev/null && return 0
+        sleep 0.1
+    done
+    return 1
+}
 terminal_out="$(run_panel_webui start terminal)"
 terminal_token="$(< "$panel_state/web/token")"
+wait_ttyd_args '-i lo -p 7680 -b /' || fail_test 'the menu terminal did not start'
 grep -Fq -- "-i lo -p 7680 -b /$terminal_token/menu -W -O -m 1 " "$TERMUX_AI_TEST_TTYD_ARGS" \
     || fail_test "the menu terminal is not behind the token: $(< "$TERMUX_AI_TEST_TTYD_ARGS")"
 grep -Fxq "Terminal: http://127.0.0.1:7680/$terminal_token/menu/" <<< "$terminal_out" || fail_test "the terminal link is missing: $terminal_out"
@@ -608,14 +636,11 @@ run_panel_webui stop terminal > /dev/null
     printf '%s\n' "$!" > "$panel_state/web/terminal.pid"
 )
 legacy_pid="$(< "$panel_state/web/terminal.pid")"
-for _ in {1..50}; do
-    grep -Fq -- '-p 7680 -W' "$TERMUX_AI_TEST_TTYD_ARGS" 2> /dev/null && break
-    sleep 0.1
-done
+wait_ttyd_args '-p 7680 -W' || fail_test 'the old terminal did not start'
 terminal_out="$(run_panel_webui start terminal)"
 grep -Fq 'rodava sem token' <<< "$terminal_out" || fail_test "an old terminal without token was kept: $terminal_out"
 ! kill -0 "$legacy_pid" 2> /dev/null || fail_test 'the old terminal without token is still running'
-grep -Fq -- "-b /$terminal_token/menu" "$TERMUX_AI_TEST_TTYD_ARGS" || fail_test 'the restarted terminal is not behind the token'
+wait_ttyd_args "-b /$terminal_token/menu" || fail_test 'the restarted terminal is not behind the token'
 run_panel_webui stop terminal > /dev/null
 grep -Fq -- '--host 127.0.0.1 --port 8085 --token-file "$web_dir/token"' "$project_root/scripts/webui.sh" \
     || fail_test 'the EmbeddingGemma service is started without the token file'
@@ -1277,7 +1302,7 @@ expect_incomplete_download() {
     test ! -e "$TERMUX_AI_TEST_INSTALL_LOG"
     test ! -e "$HOME/.local"
 }
-for hub_file in util.mjs agents.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
+for hub_file in util.mjs agents.mjs jev.mjs models.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
     held_file="$test_root/held-hub-file"
     mv "$download_copy/scripts/hub/$hub_file" "$held_file"
     expect_incomplete_download "the installer accepted a download without scripts/hub/$hub_file" 'Baixe o repositorio completo'
@@ -1323,6 +1348,7 @@ cmp "$state_dir/webui.sh" "$project_root/scripts/webui.sh"
 cmp "$state_dir/web/menu.sh" "$project_root/scripts/web-menu.sh"
 cmp "$state_dir/tools/embeddinggemma_web.py" "$project_root/scripts/embeddinggemma_web.py"
 cmp "$state_dir/tools/embeddinggemma_cli.py" "$project_root/scripts/embeddinggemma_cli.py"
+cmp "$state_dir/lfm3.sh" "$project_root/scripts/lfm3.sh"
 grep -Fqx 'Codex sem sandbox no Android: ia codex abre no modo Pedir aprovacao.' "$test_root/first-install.log"
 grep -Fq 'Use ia diagnostico para conferir logins e protecoes.' "$test_root/first-install.log"
 grep -Fq 'ia atualizar hermes' "$test_root/first-install.log"
@@ -2396,8 +2422,9 @@ cmp "$test_root/prefix/bin/ia" "$test_root/home/.local/share/termux-ai/bin/ia"
 printf '%s\n' 'PASS adoption undo from the README restores the manual setup and repeats safely'
 
 env -i PATH="$clean_path" bash "$project_root/tests/handoff.sh"
+env -i PATH="$clean_path" bash "$project_root/tests/lfm3.sh"
 
-for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma_auth.py tests/embedding_auth_test.py tests/embedding_web_test.py scripts/embeddinggemma-launcher.sh scripts/add-opencode-ubuntu.sh scripts/hub/attach.sh scripts/handoff.sh tests/run.sh tests/handoff.sh; do
+for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma_auth.py tests/embedding_auth_test.py tests/embedding_web_test.py scripts/embeddinggemma-launcher.sh scripts/add-opencode-ubuntu.sh scripts/hub/attach.sh scripts/handoff.sh scripts/lfm3.sh tests/run.sh tests/handoff.sh tests/lfm3.sh; do
     if [[ $relative_path != *.py ]]; then
         bash -n "$project_root/$relative_path"
     fi
@@ -2406,7 +2433,7 @@ for relative_path in install.sh bin/ia scripts/setup-linux.sh scripts/menu.bash 
         exit 1
     fi
 done
-for relative_path in scripts/hub/util.mjs scripts/hub/agents.mjs scripts/hub/orchestrator.mjs scripts/hub/sessions.mjs scripts/hub/server.mjs scripts/hub/cli.mjs scripts/hub/index.html scripts/hub/tmux.conf; do
+for relative_path in scripts/hub/util.mjs scripts/hub/agents.mjs scripts/hub/jev.mjs scripts/hub/models.mjs scripts/hub/orchestrator.mjs scripts/hub/sessions.mjs scripts/hub/server.mjs scripts/hub/cli.mjs scripts/hub/index.html scripts/hub/tmux.conf; do
     if LC_ALL=C grep -q $'\r' "$project_root/$relative_path"; then
         printf 'FAIL: CRLF in %s\n' "$relative_path" >&2
         exit 1

@@ -662,7 +662,7 @@ case "$stage" in
         install -m 644 "$source_dir/scripts/setup-linux.sh" "$HOME/.local/share/termux-ai/setup-linux.sh"
         install -m 644 "$source_dir/scripts/webui.sh" "$HOME/.local/share/termux-ai/webui.sh"
         install -m 644 "$source_dir/scripts/web-menu.sh" "$HOME/.local/share/termux-ai/web/menu.sh"
-        for hub_file in util.mjs agents.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
+        for hub_file in util.mjs agents.mjs jev.mjs models.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf; do
             install -m 644 "$source_dir/scripts/hub/$hub_file" "$HOME/.local/share/termux-ai/hub/$hub_file"
         done
         install -m 644 "$source_dir/scripts/embeddinggemma_web.py" "$HOME/.local/share/termux-ai/tools/embeddinggemma_web.py"

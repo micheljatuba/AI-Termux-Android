@@ -2,42 +2,103 @@
 
 # AI Termux Android
 
-**Programe com IA direto do seu Android.**
+### Seu Android virou uma estacao de programacao com IA.
 
+**Cinco agentes de IA de verdade, um menu, nenhum PC.**
 GitHub Copilot &middot; Claude Code &middot; Codex &middot; Antigravity &middot; OpenCode &middot; Hermes (opcional)
 
 [![Shell Checks](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml/badge.svg)](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml)
 ![Android 11 ou superior](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)
+![Sem root](https://img.shields.io/badge/root-nao_precisa-198754)
 ![Arquiteturas de 64 bits](https://img.shields.io/badge/64_bits-ARM64_%7C_x86__64-0969DA)
-[![Testado no Android](https://img.shields.io/badge/Testado-no_Android-198754)](#compatibilidade)
+[![Licenca MIT](https://img.shields.io/badge/licenca-MIT-blue)](LICENSE)
+[![Seguranca](https://img.shields.io/badge/seguranca-politica_publica-8250df)](SECURITY.md)
 
-[Instalar](#instalacao) &middot; [Primeiro uso](#primeiro-uso) &middot; [Na tela](#na-tela) &middot; [Painel](#acesso-pelo-navegador) &middot; [Orquestrar](#orquestracao-de-agentes) &middot; [Hermes](#hermes-agent-opcional) &middot; [Continuar em outro aparelho](#continuar-em-outro-aparelho) &middot; [Atualizar](#atualizar) &middot; [Diagnostico](#diagnostico) &middot; [Compatibilidade](#compatibilidade) &middot; [Ajuda](#ajuda) &middot; [English](README.en.md)
+<img src="docs/images/menu-android.png" width="720" alt="Menu do AI Termux Android com os agentes, o terminal Linux, o EmbeddingGemma, versoes e atualizacoes, diagnostico, o Hermes Agent opcional e o painel web">
+
+<sub>Digite <code>ia</code>. Escolha o numero. Comece a programar.</sub>
+
+**[Instalar em 3 comandos](#instalacao)** &middot; [Ver funcionando](#veja-funcionando) &middot; [Recursos](#o-que-ele-faz) &middot; [Seguranca](#seguranca-em-primeiro-lugar) &middot; [English](README.en.md)
 
 </div>
 
-Da ideia ao codigo, sem abrir um notebook. Tenha **Copilot, Claude Code, Codex,
-Antigravity e OpenCode** no mesmo ambiente, junto com Git, GitHub CLI e Node.js.
-Escolha seu agente, abra um projeto e continue de onde estiver.
+---
 
-Quer mais? Abra **varios agentes ao mesmo tempo** em um
-[painel no navegador](#acesso-pelo-navegador), [orquestre-os](#orquestracao-de-agentes)
-para comparar respostas, encadear etapas ou dividir uma tarefa e, se quiser,
-instale o [Hermes Agent](#hermes-agent-opcional).
+## Por que isso existe
 
-**Cinco agentes. Um menu. Seus projetos no Android.** Sem root no Android e
-sem depender de um PC no uso diario.
+A ideia aparece no onibus, na fila, longe do computador. Ate agora, programar
+com IA exigia um notebook ou um app preso a um unico provedor.
 
-<p align="center">
-    <img src="docs/images/menu-android.png" width="760" alt="Menu do AI Termux Android com os agentes, o terminal Linux, o EmbeddingGemma, versoes e atualizacoes, diagnostico, o Hermes Agent opcional e o painel web">
-    <br>
-    <sub>Abra com ia. Escolha pelo numero. Comece no seu projeto.</sub>
-</p>
+**AI Termux Android coloca os agentes de linha de comando oficiais dentro do seu
+celular ou tablet**, num Linux de verdade, com Git, GitHub CLI e Node.js. Voce
+abre a pasta do projeto, escolhe o agente e trabalha, e no proximo aparelho
+continua de onde parou.
+
+> **Sem root. Sem PC. Sem cabo USB.** So o Termux, a sua conta no provedor de IA
+> e alguns minutos de instalacao.
+
+## Veja funcionando
+
+Capturas reais das CLIs oficiais no Android, antes do login:
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/claude-entry.png" alt="Claude Code aberto no Android com a escolha do metodo de login"><br><sub><b>Claude Code</b></sub></td>
+    <td width="50%"><img src="docs/images/copilot-entry.png" alt="GitHub Copilot CLI aberto no Android antes do login"><br><sub><b>GitHub Copilot CLI</b></sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/codex-entry.png" alt="Codex aberto no Android com as opcoes de conexao"><br><sub><b>Codex</b></sub></td>
+    <td width="50%"><img src="docs/images/antigravity-entry.png" alt="Antigravity CLI aberto no Android com as opcoes de login Google"><br><sub><b>Google Antigravity CLI</b></sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/opencode-entry.png" alt="OpenCode aberto no Android com a selecao de provedor"><br><sub><b>OpenCode</b></sub></td>
+    <td width="50%"><img src="docs/images/agents-versions.png" alt="Versoes de Copilot, Claude, Codex, Antigravity e OpenCode no Android"><br><sub><b>Os cinco instalados, lado a lado</b></sub></td>
+  </tr>
+</table>
+
+## O que ele faz
+
+| | Recurso | Na pratica |
+| :---: | --- | --- |
+| 🤖 | **Cinco agentes, um menu** | `ia` abre o menu; `claude`, `copilot`, `codex`, `agy` e `opencode` abrem direto, sempre na pasta atual. |
+| 🖥️ | **[Painel no navegador](#acesso-pelo-navegador)** | Varios agentes ao vivo lado a lado, com terminal interativo em cada cartao. Envie a mesma pergunta para todos de uma vez. |
+| 🎼 | **[Orquestracao](#orquestracao-de-agentes)** | Compare respostas, encadeie *planejar &rarr; implementar &rarr; revisar* ou deixe um "maestro" dividir a tarefa entre os agentes. Somente leitura: nada e alterado sem voce. |
+| 🧑‍✈️ | **[Modo auto](#modo-auto-o-jev-decide-o-hermes-conduz)** | O Jev decide, o Hermes coordena e escolhe o agente e o modelo de cada parte: Claude numa, Codex noutra. Voce confirma o plano. *(experimental)* |
+| 📲 | **[Continue em outro aparelho](#continuar-em-outro-aparelho)** | `ia handoff` no celular, `ia continuar` no tablet. Seu trabalho viaja por um branch privado, com qualquer agente. *(experimental)* |
+| 🧭 | **[Frente de decisao](#frente-de-decisao-com-typesafe-jev-opcional)** | Com o TypeSafe Jev, cada tarefa e avaliada antes: risco, clareza e qual agente usar. *(opcional, experimental)* |
+| 🧠 | **[Hermes Agent](#hermes-agent-opcional) e [EmbeddingGemma 2](#embeddinggemma-2-opcional)** | Um agente generalista com memoria e busca semantica local nos seus arquivos, se voce quiser. *(opcionais)* |
+| ✈️ | **[LFM3 local](#lfm3-local-opcional)** | Um modelo da Liquid AI rodando no proprio aparelho: conversa sem internet e API local compativel com OpenAI, com token. *(opcional, experimental)* |
+| 🔄 | **[Atualizacoes](#atualizar) e [diagnostico](#diagnostico)** | `ia versoes`, `ia atualizar` e `ia diagnostico` mostram o que esta desatualizado e o que precisa de atencao. |
+
+## Seguranca em primeiro lugar
+
+Agentes de IA tem acesso aos seus arquivos. Por isso o projeto trata seguranca
+como recurso, nao como rodape:
+
+- 🔒 **Servicos locais com token.** Painel, terminal web e EmbeddingGemma escutam so em `127.0.0.1` e exigem um token privado, porque outros apps do Android tambem alcancam `127.0.0.1`.
+- 🛡️ **Nada e desligado escondido.** Sandboxes e aprovacoes dos agentes ficam no padrao de cada fornecedor; o Codex abre no modo *Pedir aprovacao*.
+- 🔑 **Segredos nao vazam.** O handoff so envia para repositorio privado e para ao encontrar tokens ou chaves; a frente de decisao nunca envia o conteudo dos seus arquivos.
+- 🚦 **Falha fechada.** Se uma verificacao nao pode ser feita, nada segue sem a sua confirmacao.
+- 🧪 **Testado de verdade.** Centenas de verificacoes automaticas a cada mudanca, incluindo testes que tentam quebrar as protecoes de proposito.
+
+Detalhes, limites conhecidos e como relatar uma falha: [SECURITY.md](SECURITY.md).
+
+## Comece agora
+
+No [Termux oficial](#1-prepare-o-termux):
+
+```sh
+pkg update && pkg install -y git
+git clone https://github.com/micheljatuba/AI-Termux-Android.git ~/AI-Termux-Android
+cd ~/AI-Termux-Android && bash install.sh
+```
+
+Depois digite `ia`. O passo a passo completo esta em [Instalacao](#instalacao).
 
 **Testado no Android:** instalacao, menu, atalhos e acesso aos cinco agentes
-com login e API. Veja os [requisitos e limites](#compatibilidade).
-
-Os modelos em nuvem precisam de **internet e uma conta no provedor escolhido**.
-Assinaturas, creditos e limites de uso nao estao incluidos neste projeto.
+com login e API. Veja os [requisitos e limites](#compatibilidade). Os modelos em
+nuvem precisam de **internet e uma conta no provedor escolhido**; assinaturas,
+creditos e limites de uso nao estao incluidos neste projeto.
 
 ## O que voce pode criar
 
@@ -46,11 +107,17 @@ Assinaturas, creditos e limites de uso nao estao incluidos neste projeto.
 | Um script que resolve uma tarefa repetitiva | Descreva a tarefa ao agente, revise o codigo e teste no terminal |
 | Um projeto que voce quer entender | Abra a pasta e peca uma explicacao da estrutura e dos pontos principais |
 | Uma correcao que nao pode esperar | Investigue o erro, revise a sugestao e execute os testes do projeto |
-| Uma segunda opiniao sobre seu codigo | Alterne entre os agentes na mesma pasta e compare as propostas |
+| Uma segunda opiniao sobre seu codigo | Rode `ia orquestrar comparar` e veja as propostas de varios agentes lado a lado |
 | Um projeto pronto para compartilhar | Use Git e GitHub CLI para revisar alteracoes e publicar seu trabalho |
 
 O agente muda. **A pasta do projeto continua a mesma.** Cada CLI mantem sua
 propria conta e conversa; voce escolhe a ferramenta para cada etapa.
+
+<div align="center">
+
+**Curtiu? Deixe uma ⭐ para encontrar o projeto depois e ajudar mais gente a descobrir.**
+
+</div>
 
 ## Instalacao
 
@@ -396,6 +463,25 @@ ia orquestrar maestro -a claude,copilot,opencode "Mapear o projeto e listar risc
 | **Comparar** | Os agentes respondem a mesma tarefa em paralelo; um juiz opcional compara as respostas (`-j auto` escolhe o melhor disponivel) |
 | **Pipeline** | Linha de montagem de 2 a 6 etapas (planejar, implementar, revisar); cada etapa recebe a tarefa e o resultado da anterior |
 | **Maestro** | Um coordenador divide a tarefa em ate 6 subtarefas, os agentes as executam em paralelo e ele integra os resultados |
+| **Auto** | O [Jev](#frente-de-decisao-com-typesafe-jev-opcional) decide (risco, clareza e modo) e o **Hermes**, se instalado, coordena: escolhe o agente e o modelo de cada subtarefa e integra o resultado |
+
+### Modo auto: o Jev decide, o Hermes conduz
+
+```sh
+ia orquestrar modelos claude opus,sonnet      # modelos que o coordenador pode escolher
+ia orquestrar auto "Revisar a seguranca do login e propor correcoes"
+```
+
+1. **O Jev decide:** bloqueia tarefas perigosas, pede confirmacao ou mais detalhes e escolhe o modo.
+2. **O Hermes coordena** (ou o agente indicado pelo Jev, se o Hermes nao estiver instalado): divide a tarefa e escolhe, para cada parte, o agente e o modelo.
+3. **Voce ve o plano numa linha e confirma** (`--sim` sem terminal).
+4. Claude, Codex, Copilot, OpenCode e Antigravity executam as partes em paralelo; o Hermes integra a resposta final.
+
+O Hermes so escolhe modelos da lista que voce definir com `ia orquestrar modelos`;
+sem lista, cada agente usa o modelo padrao da sua conta. Aceitam modelo: Claude
+Code (`--model`), Codex (`-m`), Copilot (`--model`) e OpenCode (`-m
+provedor/modelo`). O modo auto exige o Jev ativo e segue em **somente leitura**:
+os agentes propoem, voce aplica.
 
 > [!NOTE]
 > **Somente leitura, sempre.** Na orquestracao os agentes leem e analisam o
@@ -406,6 +492,7 @@ ia orquestrar maestro -a claude,copilot,opencode "Mapear o projeto e listar risc
 | Comando ou opcao | O que faz |
 | --- | --- |
 | `ia orquestrar agentes` | Lista os agentes e o que cada um consegue fazer |
+| `ia orquestrar modelos [agente lista\|limpar]` | Mostra ou define os modelos que o coordenador pode escolher por agente |
 | `ia orquestrar historico` | Lista as ultimas execucoes (as 50 mais recentes ficam salvas) |
 | `ia orquestrar ver ID [--tudo]` | Mostra o resultado de uma execucao; `--tudo` inclui cada etapa |
 | `-d PASTA`, `-t SEGUNDOS`, `--json` | Pasta de trabalho (padrao: a atual), tempo limite por etapa (30 a 1800; padrao 600) e saida em JSON |
@@ -436,6 +523,43 @@ O progresso e o resultado de cada etapa tambem aparecem no painel, na aba
 
 </details>
 
+## Frente de decisao com TypeSafe Jev (opcional)
+
+> [!NOTE]
+> **Experimental.** O cliente segue o SDK oficial `@typesafe-ai/sdk` e foi
+> testado contra um servidor simulado; a chamada a API real ainda precisa ser
+> validada no aparelho.
+
+Com o [TypeSafe Jev](https://console.typesafe.ai) ativado, toda orquestracao
+(`ia orquestrar` e o painel) passa antes por uma decisao rapida. No
+[modo auto](#modo-auto-o-jev-decide-o-hermes-conduz), a decisao de modo do Jev
+tambem e aplicada:
+
+| O Jev avalia | O que acontece |
+| --- | --- |
+| **Risco** | Tarefa perigosa (roubo de credenciais, malware, ataque) e **bloqueada**, sem atalho para ignorar. Tarefa que pode apagar dados, publicar ou mexer em contas **pede confirmacao**. |
+| **Clareza** | Tarefa vaga para e pede mais detalhes antes de gastar os agentes. |
+| **Roteamento** | Sugere o agente (inclusive o Hermes) e o modo: direto, comparar, pipeline ou maestro. A escolha final e sua. |
+
+Se o Jev estiver indisponivel (sem internet, sem chave, fora do ar), nada segue
+sem a sua confirmacao: no terminal ele pergunta; sem terminal, repita com
+`--sem-jev`. Um bloqueio nunca e ignorado.
+
+```sh
+ia typesafe configurar      # cole a chave criada em console.typesafe.ai (nao aparece na tela)
+ia typesafe testar          # confere chave e conexao, sem enviar dados do projeto
+ia decidir "Adicionar cache ao cliente HTTP"   # so a decisao, sem executar agentes
+ia typesafe desativar       # volta ao comportamento sem o Jev
+```
+
+**O que sai do aparelho:** o texto da tarefa e os **nomes** de ate 300 arquivos
+da pasta, nunca o conteudo. Pastas ocultas, `node_modules` e nomes de
+credenciais (`.env`, chaves, `auth.json`) ficam de fora. Se a tarefa ou um nome
+de arquivo parecer conter um segredo, nada e enviado. A chave fica em arquivo
+privado no Linux (`~/.local/share/termux-ai/typesafe/key`) ou na variavel
+`TYPESAFE_API_KEY`; o registro local de decisoes guarda so um resumo, sem o
+texto da tarefa.
+
 ## Hermes Agent (opcional)
 
 O [Hermes Agent](https://github.com/NousResearch/hermes-agent), da Nous
@@ -458,6 +582,41 @@ opcao `10` do menu; sem a instalacao, o comando apenas avisa como instalar.
 No painel e na orquestracao, o Hermes usa so as ferramentas `web` e `search`:
 ele nao le nem altera os arquivos do projeto. Ele aparece em `ia versoes` e em
 `ia diagnostico` (versao e login, sem exibir chaves).
+
+## LFM3 local (opcional)
+
+O [LFM3](https://www.liquid.ai/blog/lfm3), da Liquid AI, e um modelo pequeno
+(1,7 bilhao de parametros) que roda **no proprio aparelho**: sem conta, sem
+assinatura e, depois de baixado, sem internet. Ele nao substitui os agentes de
+nuvem em tarefas grandes; serve para perguntas rapidas, rascunhos e uso offline
+(no aviao, no metro, sem sinal).
+
+```sh
+ia lfm3 instalar          # pacote llama-cpp do Termux + modelo (cerca de 1 a 2 GB)
+ia lfm3                   # conversa no terminal, offline
+ia lfm3 servidor          # API compativel com OpenAI em http://127.0.0.1:8086/v1
+ia lfm3 token             # token da API (Authorization: Bearer <token>)
+ia lfm3 status
+ia lfm3 remover           # apaga o modelo baixado
+```
+
+- Roda no Termux, fora do Linux do PRoot, com o pacote oficial `llama-cpp`
+  (versao 0.8.0 ou mais nova, a primeira com suporte ao LFM3). Uma versao antiga
+  e recusada. Se o `pkg` so oferecer uma versao antiga (como `0.0.0-b9590`), o
+  espelho esta desatualizado: rode `termux-change-repo`, escolha outro espelho e
+  depois `pkg update && pkg install llama-cpp`.
+- `instalar` confere o espaco livre, avisa quando a RAM e baixa, mostra a
+  licenca e pede confirmacao (`--sim` confirma). `--quant Q4_0` escolhe uma
+  versao menor do modelo.
+- O modelo fica em `~/.local/share/termux-ai/lfm3` (pasta 700). Conversa e
+  servidor usam `--offline`: nada sai do aparelho depois da instalacao.
+- O servidor escuta so em `127.0.0.1`, exige o token (arquivo 600) e roda sem a
+  interface web do `llama-server`, porque outros apps do Android alcancam
+  `127.0.0.1`. `Ctrl+C` encerra.
+
+**Licenca:** LFM Open License v1.0, gratuita para uso pessoal e para empresas
+com receita anual abaixo de US$ 10 milhoes. Leia a licenca na pagina do modelo
+antes de uso comercial.
 
 ## Continuar em outro aparelho
 

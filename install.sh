@@ -89,7 +89,7 @@ container_dir="$distro_dir/containers/termux-ai"
 legacy_dir="$distro_dir/installed-rootfs/termux-ai"
 owner_id='termux-ai-installer-v1'
 tool_names=(ia codex copilot claude antigravity agy opencode embeddinggemma embedding)
-hub_files=(util.mjs agents.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf)
+hub_files=(util.mjs agents.mjs jev.mjs models.mjs orchestrator.mjs sessions.mjs server.mjs cli.mjs index.html attach.sh tmux.conf)
 linux_name=termux-ai
 linux_user=node
 if [[ -e "$state_dir" || -L "$state_dir" ]]; then
@@ -173,7 +173,7 @@ if (( enable_menu )) && [[ -e "$HOME/.bashrc" || -L "$HOME/.bashrc" ]]; then
         fail 'A configuracao Bash ja abre o menu ia; remova essa chamada ou use --no-menu.'
     fi
 fi
-required_files=(bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma_auth.py scripts/embeddinggemma-launcher.sh scripts/handoff.sh)
+required_files=(bin/ia scripts/setup-linux.sh scripts/menu.bash scripts/webui.sh scripts/web-menu.sh scripts/embeddinggemma_web.py scripts/embeddinggemma_cli.py scripts/embeddinggemma_auth.py scripts/embeddinggemma-launcher.sh scripts/handoff.sh scripts/lfm3.sh)
 for hub_file in "${hub_files[@]}"; do
     required_files+=("scripts/hub/$hub_file")
 done
@@ -248,6 +248,7 @@ install -m 644 "$project_root/scripts/embeddinggemma_auth.py" "$state_dir/tools/
 install -m 644 "$project_root/scripts/embeddinggemma_web.py" "$state_dir/tools/embeddinggemma_web.py"
 install -m 644 "$project_root/scripts/webui.sh" "$state_dir/webui.sh"
 install -m 644 "$project_root/scripts/web-menu.sh" "$state_dir/web/menu.sh"
+install -m 644 "$project_root/scripts/lfm3.sh" "$state_dir/lfm3.sh"
 
 if (( adopted )); then
     mkdir -p "$state_dir/adopted/bin"

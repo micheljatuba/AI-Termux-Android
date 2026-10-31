@@ -96,6 +96,44 @@ Quem tiver o link com token controla os agentes e os terminais: trate-o como uma
 senha. O historico do navegador guarda o link; para trocar o token, siga a secao
 "Acesso pelo navegador" do README.
 
+## Frente de decisao com TypeSafe Jev (opcional, desligada por padrao)
+
+Quando ativada (`ia typesafe configurar`), cada orquestracao consulta a API
+externa do TypeSafe (`https://api.typesafe.ai`) antes de rodar os agentes:
+
+- sai do aparelho: o texto da tarefa e os nomes de ate 300 arquivos da pasta,
+  nunca o conteudo; nomes de credenciais, pastas ocultas e `node_modules` ficam
+  de fora; um segredo conhecido na tarefa ou num nome impede o envio;
+- a chave fica em arquivo 600 (pasta 700) ou em `TYPESAFE_API_KEY`, nunca e
+  exibida, e so vai no cabecalho `Authorization` para o endereco HTTPS
+  configurado; redirecionamentos sao recusados;
+- falha fechada: sem decisao valida do Jev, nada segue sem confirmacao
+  explicita; um bloqueio nao tem atalho para ignorar; a verificacao do painel e
+  feita no servidor, nao so na interface;
+- a decisao e um filtro adicional, **nao uma garantia**: a classificacao de um
+  modelo pode errar. Ela nao substitui as permissoes dos agentes nem a sua
+  revisao.
+
+## Modelo local LFM3 (opcional, desligado por padrao)
+
+`ia lfm3` roda o LFM3 da Liquid AI no Termux, com o pacote `llama-cpp` do
+repositorio oficial do Termux:
+
+- so instala depois de confirmacao, mostrando a licenca; recusa `llama-cpp`
+  anterior a 0.8.0; aceita apenas repositorios `LiquidAI/LFM3-...-GGUF` e nomes
+  de quantizacao simples;
+- o modelo fica em pasta 700 e a configuracao (arquivo 600) e lida como dados;
+- depois da instalacao, conversa e servidor usam `--offline`;
+- o servidor escuta so em `127.0.0.1`, exige token de 256 bits (arquivo 600) em
+  `Authorization: Bearer` e roda sem a interface web. Rotas de saude e de lista de
+  modelos do `llama-server` podem responder sem token; elas revelam o nome do
+  modelo, nao as conversas.
+
+Limites: o arquivo do modelo e baixado do Hugging Face por HTTPS pelo proprio
+`llama-cpp`, **sem hash fixado por este projeto**: a confianca esta no TLS e na
+conta `LiquidAI`. As respostas de um modelo pequeno podem estar erradas; trate-as
+como rascunho.
+
 ## Limitacoes conhecidas da instalacao
 
 Descritas aqui para que voce possa decidir com informacao completa:

@@ -2,14 +2,33 @@
 
 # AI Termux Android
 
-**Code with AI agents straight from your Android phone or tablet.**
+### Turn your Android phone into an AI coding workstation.
 
-GitHub Copilot &middot; Claude Code &middot; Codex &middot; Antigravity &middot; OpenCode
+**Five real AI coding agents, one menu, no PC.**
+GitHub Copilot &middot; Claude Code &middot; Codex &middot; Antigravity &middot; OpenCode &middot; Hermes (optional)
 
 [![Shell Checks](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml/badge.svg)](https://github.com/micheljatuba/AI-Termux-Android/actions/workflows/checks.yml)
+![Android 11+](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)
+![No root](https://img.shields.io/badge/root-not_needed-198754)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Security policy](https://img.shields.io/badge/security-policy-8250df)](SECURITY.md)
+
+<img src="docs/images/menu-android.png" width="720" alt="AI Termux Android menu with the agents, the Linux terminal, EmbeddingGemma, versions and updates, diagnostics, the optional Hermes Agent and the web panel">
+
+<sub>Type <code>ia</code>. Pick a number. Start coding.</sub>
 
 </div>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/images/claude-entry.png" alt="Claude Code on Android before login"><br><sub><b>Claude Code</b></sub></td>
+    <td width="50%"><img src="docs/images/copilot-entry.png" alt="GitHub Copilot CLI on Android before login"><br><sub><b>GitHub Copilot CLI</b></sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/images/codex-entry.png" alt="Codex on Android with its sign-in options"><br><sub><b>Codex</b></sub></td>
+    <td width="50%"><img src="docs/images/agents-versions.png" alt="Copilot, Claude, Codex, Antigravity and OpenCode versions on Android"><br><sub><b>All five installed</b></sub></td>
+  </tr>
+</table>
 
 Five coding agents, one menu, no root and no PC. The installer sets up a dedicated
 Linux (Debian + Node.js 24 through PRoot) inside Termux with the official CLIs,
@@ -72,6 +91,32 @@ optional menu terminal and the optional EmbeddingGemma server listen only on
 `127.0.0.1` **and require a private token**, because other apps on the same
 Android device can also reach `127.0.0.1`. Treat the links as passwords.
 
+## Decision front with TypeSafe Jev (optional, experimental)
+
+`ia typesafe configurar` turns on a decision step before every orchestration:
+TypeSafe Jev rates the risk (dangerous tasks are **blocked**, risky ones need
+confirmation), checks that the task is clear, and suggests the agent (Hermes
+included) and the mode. Only the task text and up to 300 file **names** leave
+the device, never file contents; tasks containing known secrets are never sent.
+If Jev is unreachable, nothing runs without your explicit confirmation.
+
+`ia orquestrar auto "task"` puts it together: Jev decides, Hermes (when
+installed) coordinates and picks the agent and model for each subtask
+(Claude for one part, Codex for another) from the models you allow with
+`ia orquestrar modelos claude opus,sonnet`. You confirm the plan; agents stay
+read-only and propose, you apply.
+
+## Local LFM3 (optional, experimental)
+
+`ia lfm3 instalar` installs Termux's `llama-cpp` package (0.8.0 or newer, the
+first with LFM3 support) and downloads Liquid AI's
+[LFM3](https://www.liquid.ai/blog/lfm3) 1.7B model (about 1 to 2 GB) after a
+confirmation. `ia lfm3` then chats fully offline; `ia lfm3 servidor` serves an
+OpenAI-compatible API on `127.0.0.1:8086` that **requires a private token**
+(`ia lfm3 token`) and runs without the llama-server web UI. The model is under
+the LFM Open License v1.0 (free below US$ 10 million annual revenue); read it
+before commercial use.
+
 ## Compatibility and security
 
 Tested on Android without root. PRoot is **not** a security sandbox: agents can
@@ -84,3 +129,9 @@ privately and the known limitations of the installation.
 
 [MIT](LICENSE). Termux, the agent CLIs and the AI services remain subject to their
 providers' licenses and terms.
+
+<div align="center">
+
+**Like it? Leave a ⭐ to find it later and help more people discover it.**
+
+</div>

@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events';
 import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { READONLY_PREAMBLE, describeAgents, getAgent, headlessCommand } from './agents.mjs';
+import { sanitizePolicy } from './models.mjs';
 import { HubError, Semaphore, clampInt, randomId, stripAnsi, truncateBytes, writeJsonAtomic } from './util.mjs';
 
 export const MODES = Object.freeze(['compare', 'pipeline', 'maestro']);
@@ -85,8 +86,8 @@ export function describeFailure(stdout, stderr, code) {
 }
 
 // Executa um agente uma unica vez (headless, somente leitura).
-export function runHeadless({ agent, prompt, dir, timeoutMs, signal, onOutput, env = process.env, spawnFn = spawn }) {
-  const spec = headlessCommand(agent, { prompt, dir });
+export function runHeadless({ agent, prompt, dir, model = null, timeoutMs, signal, onOutput, env = process.env, spawnFn = spawn }) {
+  const spec = headlessCommand(agent, { prompt, dir, model });
   const started = Date.now();
   const failure = (error, extra = {}) => ({
     ok: false,
@@ -223,7 +224,7 @@ function extractJson(text) {
 }
 
 // Valida o plano devolvido pelo coordenador do modo maestro.
-export function parseMaestroPlan(text, allowed, maxTasks) {
+export function parseMaestroPlan(text, allowed, maxTasks, models = {}) {
   const data = extractJson(text);
   const list = data?.tarefas ?? data?.tasks;
   if (!Array.isArray(list) || list.length === 0) return null;
@@ -234,7 +235,10 @@ export function parseMaestroPlan(text, allowed, maxTasks) {
     const requested = String(item.agente ?? item.agent ?? '').toLowerCase();
     const agent = allowed.includes(requested) ? requested : allowed[index % allowed.length];
     const title = String(item.titulo ?? item.title ?? `Subtarefa ${index + 1}`).trim().slice(0, LIMITS.subtaskTitle);
-    tasks.push({ agent, title: title || `Subtarefa ${index + 1}`, prompt: prompt.slice(0, LIMITS.subtaskPrompt) });
+    // So um modelo da lista permitida para o agente escolhido; fora dela vale o padrao da conta.
+    const requestedModel = String(item.modelo ?? item.model ?? '').trim();
+    const model = (models[agent] ?? []).includes(requestedModel) ? requestedModel : null;
+    tasks.push({ agent, ...(model ? { model } : {}), title: title || `Subtarefa ${index + 1}`, prompt: prompt.slice(0, LIMITS.subtaskPrompt) });
   }
   return tasks;
 }
@@ -275,8 +279,11 @@ function stepPrompt(task, step, previous, results) {
   return withPreamble(lines.join('\n'));
 }
 
-function coordinatorPrompt(task, workers, maxTasks) {
-  const team = workers.map((id) => `- ${id}: ${labelOf(id)}`).join('\n');
+function coordinatorPrompt(task, workers, maxTasks, models = {}) {
+  const team = workers
+    .map((id) => `- ${id}: ${labelOf(id)}${models[id]?.length ? ` (modelos permitidos: ${models[id].join(', ')})` : ''}`)
+    .join('\n');
+  const withModels = workers.some((id) => models[id]?.length);
   return withPreamble(
     [
       'Você é o maestro de uma equipe de agentes de IA (todos somente leitura).',
@@ -287,9 +294,14 @@ function coordinatorPrompt(task, workers, maxTasks) {
       '',
       '## Regras',
       '- Use apenas os agentes listados e escolha o mais adequado para cada subtarefa.',
+      ...(withModels
+        ? ['- Quando o agente tiver modelos permitidos, escolha em "modelo" o mais adequado à subtarefa (o mais capaz só quando a subtarefa for difícil); sem lista, omita "modelo".']
+        : []),
       '- Cada prompt deve ser completo e autocontido (o agente não vê as outras subtarefas).',
       '- Responda SOMENTE com JSON válido, sem texto fora do JSON, neste formato:',
-      '{"tarefas":[{"agente":"<id>","titulo":"<título curto>","prompt":"<instrução completa>"}]}',
+      withModels
+        ? '{"tarefas":[{"agente":"<id>","modelo":"<modelo permitido ou omitido>","titulo":"<título curto>","prompt":"<instrução completa>"}]}'
+        : '{"tarefas":[{"agente":"<id>","titulo":"<título curto>","prompt":"<instrução completa>"}]}',
       '',
       '## Tarefa',
       task,
@@ -374,6 +386,8 @@ export function normalizeSpec(spec, installed) {
     if (options.agents.length < 1) fail('Escolha pelo menos 1 agente para executar as subtarefas');
     options.coordinator = pick(spec.coordinator || options.agents[0], 'Coordenador');
     options.maxTasks = clampInt(spec.maxTasks, 1, 6, 4);
+    const policy = sanitizePolicy(spec.models);
+    options.models = Object.fromEntries(Object.entries(policy).filter(([agent]) => options.agents.includes(agent)));
   }
   return { prompt, options };
 }
@@ -627,6 +641,7 @@ export class Orchestrator extends EventEmitter {
       let lastLive = 0;
       const result = await this.runAgent({
         agent: step.agent,
+        model: step.model ?? null,
         prompt,
         dir: run.dir,
         timeoutMs: run.options.timeoutSec * 1000,
@@ -720,19 +735,20 @@ export class Orchestrator extends EventEmitter {
 
   async #maestro(run, signal) {
     const { agents, coordinator, maxTasks } = run.options;
+    const models = run.options.models ?? {};
     const plan = this.#addStep(run, 'coordinator', coordinator, `Plano · ${labelOf(coordinator)}`);
     const integrate = this.#addStep(run, 'integrate', coordinator, `Integração · ${labelOf(coordinator)}`);
     this.#changed(run);
 
     let tasks = null;
-    let prompt = coordinatorPrompt(run.prompt, agents, maxTasks);
+    let prompt = coordinatorPrompt(run.prompt, agents, maxTasks, models);
     for (let attempt = 0; attempt < 2 && !tasks && !signal.aborted; attempt += 1) {
       await this.#runStep(run, signal, plan, prompt);
       if (plan.status !== 'done') {
         if (!signal.aborted) run.error = `O coordenador falhou: ${plan.error}`;
         return;
       }
-      tasks = parseMaestroPlan(plan.output, agents, maxTasks);
+      tasks = parseMaestroPlan(plan.output, agents, maxTasks, models);
       if (!tasks) {
         prompt = withPreamble(
           `Sua resposta anterior não era um JSON válido no formato pedido. Responda SOMENTE com o JSON {"tarefas":[{"agente","titulo","prompt"}]} para a tarefa:\n\n${run.prompt}\n\nAgentes permitidos: ${agents.join(', ')}.`,
@@ -747,7 +763,10 @@ export class Orchestrator extends EventEmitter {
 
     const workers = tasks.map((task) => ({
       task,
-      step: this.#addStep(run, 'worker', task.agent, `${task.title} · ${labelOf(task.agent)}`, { subtask: task.title }),
+      step: this.#addStep(run, 'worker', task.agent, `${task.title} · ${labelOf(task.agent)}${task.model ? ` (${task.model})` : ''}`, {
+        subtask: task.title,
+        model: task.model ?? null,
+      }),
     }));
     // as subtarefas entram antes da integracao na linha do tempo
     run.steps.splice(run.steps.indexOf(integrate), 1);

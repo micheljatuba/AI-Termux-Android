@@ -27,6 +27,7 @@ const DEFINITIONS = [
     headless: ({ prompt }) => ({
       args: ['-p', prompt, '-s', '--no-ask-user', '--no-auto-update', '--deny-tool=write', '--deny-tool=shell'],
     }),
+    withModel: (args, model) => [...args, '--model', model],
   },
   {
     id: 'claude',
@@ -51,6 +52,8 @@ const DEFINITIONS = [
       ],
       stdin: prompt,
     }),
+    // Flags conferidas no --help das versoes fixadas pelo instalador.
+    withModel: (args, model) => [...args, '--model', model],
   },
   {
     id: 'codex',
@@ -67,6 +70,8 @@ const DEFINITIONS = [
       args: ['exec', '-s', 'read-only', '--skip-git-repo-check', '--ephemeral', '-C', dir, '-'],
       stdin: prompt,
     }),
+    // "-" (prompt na entrada padrao) continua sendo o ultimo argumento.
+    withModel: (args, model) => [...args.slice(0, -1), '-m', model, args.at(-1)],
   },
   {
     id: 'agy',
@@ -91,6 +96,8 @@ const DEFINITIONS = [
     guard: 'Agente plan (permissões de edição negadas).',
     login: 'ia opencode',
     headless: ({ prompt, dir }) => ({ args: ['run', prompt, '--agent', 'plan', '--dir', dir] }),
+    // OpenCode usa provedor/modelo (ex.: anthropic/claude-sonnet-4).
+    withModel: (args, model) => [...args, '-m', model],
     clean: stripThinking,
   },
   {
@@ -154,6 +161,7 @@ export function describeAgents(searchPath = process.env.PATH ?? '') {
       installed: Boolean(location),
       orchestrable: Boolean(agent.headless),
       reads: agent.reads,
+      models: Boolean(agent.withModel),
       guard: agent.guard,
       note: agent.note ?? '',
       login: agent.login,
@@ -171,14 +179,21 @@ export function sessionArgv(id) {
   return ['bash', '-lc', LOGIN_SCRIPT, 'ia-sessao', ...agent.session];
 }
 
+// Nome de modelo seguro para virar argumento: sem espaco e sem comecar com "-" (nao vira uma flag).
+export const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,79}$/;
+
+/** O agente aceita escolher o modelo na execucao automatica? */
+export const supportsModel = (id) => Boolean(getAgent(id)?.withModel);
+
 // Comando de uma execucao unica somente leitura (usado pela orquestracao).
-export function headlessCommand(id, { prompt, dir }) {
+export function headlessCommand(id, { prompt, dir, model = null }) {
   const agent = getAgent(id);
   if (!agent?.headless) return null;
   const spec = agent.headless({ prompt, dir });
+  const useModel = model && agent.withModel && MODEL_NAME.test(model);
   return {
     command: agent.bin,
-    args: spec.args,
+    args: useModel ? agent.withModel(spec.args, model) : spec.args,
     stdin: spec.stdin ?? null,
     clean: agent.clean ?? ((text) => text),
   };

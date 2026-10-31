@@ -1344,7 +1344,14 @@ async function startRun() {
   starting = true;
   orch.go.disabled = true;
   try {
-    const run = await api('POST', 'api/runs', spec);
+    let run;
+    try {
+      run = await api('POST', 'api/runs', spec);
+    } catch (failure) {
+      // A frente de decisao (Jev) pede confirmacao: o servidor so aceita com confirmed=true.
+      if (failure.status !== 409 || !window.confirm(`${failure.message}\n\nSeguir mesmo assim?`)) throw failure;
+      run = await api('POST', 'api/runs', { ...spec, confirmed: true });
+    }
     noteServerTime(run.serverTime);
     persistOrch();
     openRun(run.id, run);

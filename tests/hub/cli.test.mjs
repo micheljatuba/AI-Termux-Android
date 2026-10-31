@@ -37,6 +37,7 @@ async function setup({ installed = ['claude', 'copilot', 'codex'], handlers = {}
       orchestrator: make(),
       describe,
       signals: new EventEmitter(),
+      gate: async () => ({ status: 'disabled' }),
       ...extra,
     });
     return { code, out, err };
