@@ -12,6 +12,7 @@ default_repo='LiquidAI/LFM3-1.7B-GGUF'
 repo_pattern='^LiquidAI/LFM3-[A-Za-z0-9._-]{1,40}-GGUF$'
 quant_pattern='^[A-Za-z0-9_]{1,16}$'
 min_package=0.8.0
+package_version=''
 min_build=11960
 min_free_kib=$((3 * 1024 * 1024))
 low_ram_kib=$((3 * 1024 * 1024))
@@ -90,18 +91,32 @@ version_at_least() {
     return 0
 }
 
-# O pacote do Termux traz a versao do llama.cpp (0.8.0 = build 11960, a primeira com LFM3).
+# O pacote do Termux traz a versao do llama.cpp: 0.8.0 (= build 11960) e a primeira com LFM3. Os pacotes antigos usam
+# 0.0.0-bNNNN, com o numero do build.
 llama_supports_lfm3() {
-    local package_version build
+    local build
     package_version="$(dpkg-query -W -f='${Version}' llama-cpp 2> /dev/null || true)"
-    package_version="${package_version%%-*}"
-    if [[ $package_version =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
-        version_at_least "$package_version" "$min_package"
+    if [[ $package_version =~ ^0\.0\.0-b([0-9]+)(-[0-9]+)?$ ]]; then
+        (( 10#${BASH_REMATCH[1]} >= min_build ))
+        return
+    fi
+    if [[ $package_version =~ ^([0-9]+(\.[0-9]+){1,2})(-[0-9]+)?$ ]]; then
+        version_at_least "${BASH_REMATCH[1]}" "$min_package"
         return
     fi
     build="$(llama-cli --version 2>&1 | grep -Eo 'version: [0-9]+' | head -n 1 || true)"
     build="${build#version: }"
     [[ $build =~ ^[0-9]+$ ]] && (( build >= min_build ))
+}
+
+# Um espelho desatualizado entrega um llama-cpp antigo mesmo depois de pkg upgrade.
+old_llama_hint() {
+    printf '%s\n' \
+        "Este llama-cpp (${package_version:-versao desconhecida}) nao reconhece o LFM3: precisa da versao $min_package ou mais nova." \
+        'O espelho do Termux pode estar desatualizado. Troque de espelho e atualize:' \
+        '  termux-change-repo   (escolha outro espelho)' \
+        '  pkg update && pkg install llama-cpp' \
+        'Depois rode de novo: ia lfm3 instalar' >&2
 }
 
 model_present() {
@@ -162,8 +177,10 @@ cmd_install() {
     "$PREFIX/bin/pkg" install -y llama-cpp
     command -v llama-cli > /dev/null 2>&1 && command -v llama-server > /dev/null 2>&1 \
         || fail 'O pacote llama-cpp nao instalou llama-cli e llama-server.'
-    llama_supports_lfm3 \
-        || fail "Este llama-cpp nao reconhece o LFM3 (precisa da versao $min_package ou mais nova). Rode: pkg upgrade llama-cpp"
+    if ! llama_supports_lfm3; then
+        old_llama_hint
+        exit 1
+    fi
     ensure_private_dirs
     save_config
     printf '%s\n' 'Baixando o modelo; pode levar alguns minutos.'
@@ -206,7 +223,7 @@ cmd_status() {
     if command -v llama-cli > /dev/null 2>&1 && llama_supports_lfm3; then
         printf '%s\n' 'llama-cpp: instalado, com suporte ao LFM3'
     elif command -v llama-cli > /dev/null 2>&1; then
-        printf '%s\n' "llama-cpp: versao antiga, sem LFM3 (precisa de $min_package+): pkg upgrade llama-cpp"
+        printf '%s\n' "llama-cpp: ${package_version:-versao antiga}, sem LFM3 (precisa de $min_package+); troque o espelho com termux-change-repo e rode pkg update"
     else
         printf '%s\n' 'llama-cpp: nao instalado'
     fi

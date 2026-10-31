@@ -51,7 +51,7 @@ printf 'llama-server LLAMA_CACHE=%s %s\n' "$LLAMA_CACHE" "$*" >> "$MOCK_LOG"
 MOCK
 chmod +x "$PREFIX/bin/pkg" "$PREFIX/bin/dpkg-query" "$test_root/llama/llama-cli" "$test_root/llama/llama-server"
 export MOCK_LLAMA_DIR="$test_root/llama"
-export MOCK_PACKAGE_VERSION=0.8.0
+export MOCK_PACKAGE_VERSION=${MOCK_DEFAULT_VERSION:-0.8.0}
 
 lfm3_dir="$HOME/.local/share/termux-ai/lfm3"
 mode_of() {
@@ -91,7 +91,15 @@ printf '%s\n' 'PASS LFM3 validates model, quantization and port'
 # llama-cpp antigo (sem LFM3) e recusado antes do download.
 status=0
 MOCK_PACKAGE_VERSION=0.7.9 bash "$lfm3" instalar --sim > "$test_root/out" 2>&1 || status=$?
-[[ $status -ne 0 ]] && grep -Fq 'pkg upgrade llama-cpp' "$test_root/out" || die 'old llama-cpp was accepted'
+[[ $status -ne 0 ]] && grep -Fq 'termux-change-repo' "$test_root/out" || die 'old llama-cpp was accepted'
+# Formato antigo do Termux (0.0.0-bNNNN), como o b9590 de um espelho desatualizado: vale o numero do build.
+for old_version in 0.0.0-b9590-0 0.0.0-b11959; do
+    status=0
+    MOCK_PACKAGE_VERSION=$old_version bash "$lfm3" instalar --sim > "$test_root/out" 2>&1 || status=$?
+    [[ $status -ne 0 ]] && grep -Fq "($old_version)" "$test_root/out" || die "accepted $old_version"
+done
+MOCK_PACKAGE_VERSION=0.0.0-b9590-0 bash "$lfm3" status > "$test_root/out"
+grep -Fq 'llama-cpp: 0.0.0-b9590-0, sem LFM3' "$test_root/out" || die 'status did not show the old version'
 ! grep -q '^llama-cli' "$MOCK_LOG" || die 'old llama-cpp started a download'
 # Sem dpkg-query, vale o numero do build.
 status=0

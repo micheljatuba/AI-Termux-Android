@@ -602,7 +602,9 @@ ia lfm3 remover           # apaga o modelo baixado
 
 - Roda no Termux, fora do Linux do PRoot, com o pacote oficial `llama-cpp`
   (versao 0.8.0 ou mais nova, a primeira com suporte ao LFM3). Uma versao antiga
-  e recusada com a instrucao `pkg upgrade llama-cpp`.
+  e recusada. Se o `pkg` so oferecer uma versao antiga (como `0.0.0-b9590`), o
+  espelho esta desatualizado: rode `termux-change-repo`, escolha outro espelho e
+  depois `pkg update && pkg install llama-cpp`.
 - `instalar` confere o espaco livre, avisa quando a RAM e baixa, mostra a
   licenca e pede confirmacao (`--sim` confirma). `--quant Q4_0` escolhe uma
   versao menor do modelo.
